@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=hotaru
+Exec=hotaru
+Icon=io.github.jeffshee.Hotaru
+Terminal=false
+Type=Application
+Categories=GTK;
+StartupNotify=true
