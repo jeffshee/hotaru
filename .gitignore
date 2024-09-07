@@ -23,4 +23,8 @@ Cargo.lock
 # Project specific
 .flatpak
 .flatpak-builder
+_build
 builddir
+
+# Test files
+test.*

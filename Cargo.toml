@@ -6,17 +6,19 @@ edition = "2021"
 [dependencies]
 gdk-x11 = { version = "0.9.0", package = "gdk4-x11" }
 gettext-rs = { version = "0.7.0", features = ["gettext-system"] }
-gst = { version = "0.23.0", package = "gstreamer", features = ["v1_20"] }
+gst = { version = "0.23.0", package = "gstreamer", features = ["v1_24"] }
 gst-play = { version = "0.23.0", package = "gstreamer-play" }
-gst-plugin-gtk4 = { version = "0.13.0", features = ["gtk_v4_14"] }
-gst-video = { version = "0.23.0", package = "gstreamer-video", features = ["v1_20"] }
+gst-plugin-gtk4 = { version = "0.13.0", features = ["gtk_v4_14"]}
+gst-video = { version = "0.23.0", package = "gstreamer-video", features = ["v1_24"] }
 gtk = { version = "0.9.0", package = "gtk4", features = ["v4_14"] }
 json = "0.12.4"
 webkit = { version = "0.4.0", package = "webkit6" }
 x11rb = "0.13.1"
 
 [features]
+default = ["dmabuf", "gtk_v4_14"]
 dmabuf = ["gst-plugin-gtk4/dmabuf"]
+gtk_v4_14 = ["gst-plugin-gtk4/gtk_v4_14"]
 wayland = ["gst-plugin-gtk4/wayland"]
 x11egl = ["gst-plugin-gtk4/x11egl"]
 x11glx = ["gst-plugin-gtk4/x11glx"]

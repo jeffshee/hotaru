@@ -18,53 +18,136 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+use glib::Object;
 use gtk::prelude::*;
-use gtk::subclass::prelude::*;
 use gtk::{gio, glib};
+use json::{self, object};
+
+use crate::application::HotaruApplication;
+
+glib::wrapper! {
+    pub struct HotaruApplicationWindow(ObjectSubclass<imp::HotaruApplicationWindow>)
+        @extends gtk::ApplicationWindow, gtk::Window, gtk::Widget,
+        @implements gio::ActionGroup, gio::ActionMap, gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Native, gtk::Root, gtk::ShortcutManager;
+}
+
+const WINDOW_TITLE: &str = "Hotaru Renderer";
+
+impl HotaruApplicationWindow {
+    pub fn new(app: &HotaruApplication) -> Self {
+        let (width, height) = (1920, 1080);
+
+        let title = if app.use_gnome_hanabi_ext() {
+            hanabi_window_title()
+        } else {
+            WINDOW_TITLE.to_string()
+        };
+
+        let decorated =
+            !app.use_x11_desktop() || !app.use_wayland_layer_shell() || !app.use_gnome_hanabi_ext();
+
+        Object::builder()
+            .property("application", app)
+            .property("title", title)
+            .property("decorated", decorated)
+            // .property("default_width", width)
+            // .property("default_height", height)
+            .property("width_request", width)
+            .property("height_request", height)
+            .build()
+    }
+}
+
+fn hanabi_window_title() -> String {
+    // FIXME: Dummy
+    let application_id = "io.github.jeffshee.HotaruRenderer";
+    let index = 0;
+    let state = object! {
+        position: [0, 0],
+        keepAtBottom: true,
+        keepMinimized: true,
+        keepPosition: true,
+    };
+    let state_json = json::stringify(state);
+
+    format!("@${application_id}!${state_json}|${index}")
+}
 
 mod imp {
     use super::*;
+    use gtk::subclass::prelude::*;
 
-    #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/io/github/jeffshee/Hotaru/window.ui")]
-    pub struct HotaruWindow {
-        // Template widgets
-        #[template_child]
-        pub header_bar: TemplateChild<gtk::HeaderBar>,
-        #[template_child]
-        pub label: TemplateChild<gtk::Label>,
-    }
+    use crate::application::HotaruApplication;
+
+    #[derive(Default)]
+    pub struct HotaruApplicationWindow;
 
     #[glib::object_subclass]
-    impl ObjectSubclass for HotaruWindow {
-        const NAME: &'static str = "HotaruWindow";
-        type Type = super::HotaruWindow;
+    impl ObjectSubclass for HotaruApplicationWindow {
+        const NAME: &'static str = "HotaruApplicationWindow";
+        type Type = super::HotaruApplicationWindow;
         type ParentType = gtk::ApplicationWindow;
+    }
 
-        fn class_init(klass: &mut Self::Class) {
-            klass.bind_template();
-        }
+    impl ObjectImpl for HotaruApplicationWindow {}
 
-        fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
-            obj.init_template();
+    impl WidgetImpl for HotaruApplicationWindow {
+        fn realize(&self) {
+            self.parent_realize();
+
+            let window: glib::BorrowedObject<'_, super::HotaruApplicationWindow> = self.obj();
+            let app: HotaruApplication = window.property("application");
+            if app.use_x11_desktop() {
+                set_x11_window_type_hint(&window);
+            }
         }
     }
 
-    impl ObjectImpl for HotaruWindow {}
-    impl WidgetImpl for HotaruWindow {}
-    impl WindowImpl for HotaruWindow {}
-    impl ApplicationWindowImpl for HotaruWindow {}
-}
+    impl WindowImpl for HotaruApplicationWindow {}
 
-glib::wrapper! {
-    pub struct HotaruWindow(ObjectSubclass<imp::HotaruWindow>)
-        @extends gtk::Widget, gtk::Window, gtk::ApplicationWindow,        @implements gio::ActionGroup, gio::ActionMap;
-}
+    impl ApplicationWindowImpl for HotaruApplicationWindow {}
 
-impl HotaruWindow {
-    pub fn new<P: IsA<gtk::Application>>(application: &P) -> Self {
-        glib::Object::builder()
-            .property("application", application)
-            .build()
+    fn set_x11_window_type_hint(window: &super::HotaruApplicationWindow) {
+        use gdk_x11::X11Surface;
+        use x11rb::connection::Connection;
+        use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, PropMode};
+        use x11rb::wrapper::ConnectionExt as _;
+
+        if let Some(surface) = window.surface() {
+            if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
+                let xid = x11_surface.xid();
+                println!("xid: {xid}");
+                let (conn, _screen_num) = x11rb::connect(None).unwrap();
+                let net_wm_window_type = conn
+                    .intern_atom(false, b"_NET_WM_WINDOW_TYPE")
+                    .unwrap()
+                    .reply()
+                    .unwrap()
+                    .atom;
+                let net_wm_window_type_desktop = conn
+                    .intern_atom(false, b"_NET_WM_WINDOW_TYPE_DESKTOP")
+                    .unwrap()
+                    .reply()
+                    .unwrap()
+                    .atom;
+                conn.change_property32(
+                    PropMode::REPLACE,
+                    xid as u32,
+                    net_wm_window_type,
+                    AtomEnum::ATOM,
+                    &[net_wm_window_type_desktop],
+                )
+                .unwrap();
+
+                window.connect_map(move |_window| {
+                    // Flush after the window is mapped, otherwise it will become a race condition
+                    conn.flush().unwrap();
+                });
+            } else {
+                eprintln!("Failed to downcast Surface to X11Surface");
+            }
+        } else {
+            eprintln!("Failed to get Surface");
+        }
     }
 }
