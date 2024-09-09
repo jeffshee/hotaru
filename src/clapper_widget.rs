@@ -98,7 +98,20 @@ mod imp {
 
             let obj = self.obj();
             let sink = gst::ElementFactory::make("clappersink").build().unwrap();
-            let renderer = gst_play::PlayVideoOverlayVideoRenderer::with_sink(&sink);
+            let renderer;
+            #[cfg(feature = "gst_v1_24")]
+            {
+                if let Ok(glsink) = gst::ElementFactory::make("glsinkbin").build() {
+                    glsink.set_property("sink", &sink);
+                    renderer = gst_play::PlayVideoOverlayVideoRenderer::with_sink(&glsink);
+                } else {
+                    renderer = gst_play::PlayVideoOverlayVideoRenderer::with_sink(&sink);
+                }
+            }
+            #[cfg(not(feature = "gst_v1_24"))]
+            {
+                renderer = gst_play::PlayVideoOverlayVideoRenderer::with_sink(&sink);
+            }
             let player = gst_play::Play::new(Some(renderer.clone()));
             let adapter = gst_play::PlaySignalAdapter::new(&player);
             let picture = sink.property::<gtk::Picture>("widget");
