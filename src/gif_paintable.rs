@@ -94,11 +94,17 @@ mod imp {
             if let Some(delay) = *delay {
                 let timeout_id = glib::timeout_add_local(
                     delay,
-                    clone!(@weak self as inner_self => @default-return glib::ControlFlow::Break, move || {
-                        inner_self.obj().invalidate_contents();
-                        inner_self.setup_timeout();
-                        glib::ControlFlow::Break
-                    }),
+                    clone!(
+                        #[weak(rename_to = inner_self)]
+                        self,
+                        #[upgrade_or]
+                        glib::ControlFlow::Break,
+                        move || {
+                            inner_self.obj().invalidate_contents();
+                            inner_self.setup_timeout();
+                            glib::ControlFlow::Break
+                        }
+                    ),
                 );
                 self.timeout_id.replace(Some(timeout_id));
             }

@@ -26,7 +26,7 @@ mod gst_utils;
 mod video_widget;
 mod window;
 
-use config::{GETTEXT_PACKAGE, LOCALEDIR, PKGDATADIR};
+use config::{GETTEXT_PACKAGE, LOCALEDIR, PKGDATADIR, VERSION};
 use gettextrs::{bind_textdomain_codeset, bindtextdomain, textdomain};
 use gtk::prelude::*;
 use gtk::Picture;
@@ -40,6 +40,9 @@ use video_widget::VideoWidget;
 use window::HotaruApplicationWindow;
 
 fn main() -> glib::ExitCode {
+    println!("Hotaru {}", VERSION);
+
+    // Initialize
     gst::init().unwrap();
     gtk::init().unwrap();
     gstgtk4::plugin_register_static().expect("Failed to register gstgtk4 plugin");
@@ -60,10 +63,12 @@ fn main() -> glib::ExitCode {
         "io.github.jeffshee.Hotaru",
         &gio::ApplicationFlags::HANDLES_COMMAND_LINE,
     );
+
     // app.connect_activate(build_ui_gif);
     // app.connect_activate(build_ui_video);
     app.connect_activate(build_ui_clapper);
     // app.connect_activate(build_ui_web);
+
     app.run()
 }
 
