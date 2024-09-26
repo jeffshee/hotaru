@@ -21,10 +21,15 @@ Cargo.lock
 #.idea/
 
 # Project specific
-.flatpak
-.flatpak-builder
 _build
 builddir
+src/config.rs
+
+# Flatpak specific
+.flatpak
+.flatpak-builder
+io.github.jeffshee.Hotaru.flatpak
 
 # Test files
-test.*
+test.gif
+test.webm

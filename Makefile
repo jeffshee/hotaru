@@ -1,6 +1,6 @@
 BUILDDIR := builddir
 SRC_DIR := src
-LICENSE_HEADER := license_header.txt
+LICENSE_HEADER := data/license-header.txt
 AUTHOR ?= Jeff Shee
 
 # Default target
