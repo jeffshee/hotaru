@@ -1,9 +1,19 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<component type="desktop">
-	<id>io.github.jeffshee.Hotaru.desktop</id>
-	<metadata_license>CC0-1.0</metadata_license>
-	<project_license>GPL-3.0-or-later</project_license>
-	<description>
-	  <p>No description</p>
-	</description>
+<?xml version='1.0' encoding='utf-8'?>
+<component type="desktop-application">
+  <!--Created with jdAppStreamEdit 9.1-->
+  <id>io.github.jeffshee.Hotaru.desktop</id>
+  <name>Hotaru</name>
+  <summary>Hotaru Renderer</summary>
+  <developer id="jeffshee">
+    <name>Jeff Shee</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>No description</p>
+  </description>
+  <categories>
+    <category>AudioVideo</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
 </component>
