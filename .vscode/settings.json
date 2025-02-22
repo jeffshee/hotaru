@@ -7,16 +7,15 @@
         ".flatpak/**": true,
         "_build/**": true
     },
-    "rust-analyzer.files.excludeDirs": [
+    "rust-analyzer.files.exclude": [
         ".flatpak",
         ".flatpak-builder",
         "_build",
         "build",
         "builddir"
     ],
+    // "rust-analyzer.server.path": "${workspaceFolder}/.flatpak/rust-analyzer.sh",
+    // "rust-analyzer.runnables.command": "${workspaceFolder}/.flatpak/cargo.sh",
     "mesonbuild.configureOnOpen": false,
     "mesonbuild.buildFolder": "_build",
-    "mesonbuild.mesonPath": "${workspaceFolder}/.flatpak/meson.sh",
-    "rust-analyzer.server.path": "${workspaceFolder}/.flatpak/rust-analyzer.sh",
-    "rust-analyzer.runnables.command": "${workspaceFolder}/.flatpak/cargo.sh"
 }

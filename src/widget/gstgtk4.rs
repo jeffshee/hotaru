@@ -1,4 +1,4 @@
-/* video_widget.rs
+/* gstgtk4.rs
  *
  * Copyright 2024 Jeff Shee
  *
@@ -22,23 +22,25 @@ use glib::Object;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
+use super::RendererWidget;
+
 glib::wrapper! {
-    pub struct VideoWidget(ObjectSubclass<imp::VideoWidget>)
+    pub struct GstGtk4Widget(ObjectSubclass<imp::GstGtk4Widget>)
         @extends gtk::Box, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
-impl VideoWidget {
-    pub fn new() -> Self {
-        Object::builder().build()
+impl RendererWidget for GstGtk4Widget {
+    fn with_filepath(filepath: &str) -> Self {
+        let uri = gio::File::for_path(filepath).uri();
+        Self::with_uri(&uri)
     }
 
-    pub fn with_filepath(filepath: &str) -> Self {
-        let uri = gio::File::for_path(filepath).uri();
+    fn with_uri(uri: &str) -> Self {
         Object::builder().property("uri", uri).build()
     }
 
-    pub fn widget_clone(&self) -> gtk::Box {
+    fn mirror(&self) -> gtk::Box {
         let widget = gtk::Box::builder().build();
         let paintable = self.paintable().unwrap();
         let picture = gtk::Picture::builder()
@@ -58,18 +60,29 @@ impl VideoWidget {
         }
         widget
     }
+
+    fn play(&self) {
+        self.player().play();
+    }
+
+    fn pause(&self) {
+        self.player().pause();
+    }
+
+    fn stop(&self) {
+        self.player().stop();
+    }
 }
 
 mod imp {
-    use std::cell::RefCell;
-
     use super::*;
     use glib::Properties;
     use gtk::{gdk, subclass::prelude::*};
+    use std::cell::RefCell;
 
     #[derive(Properties, Default)]
-    #[properties(wrapper_type = super::VideoWidget)]
-    pub struct VideoWidget {
+    #[properties(wrapper_type = super::GstGtk4Widget)]
+    pub struct GstGtk4Widget {
         #[property(get, set)]
         uri: RefCell<String>,
         sink: RefCell<Option<gst::Element>>,
@@ -85,14 +98,14 @@ mod imp {
     }
 
     #[glib::object_subclass]
-    impl ObjectSubclass for VideoWidget {
-        const NAME: &'static str = "VideoWidget";
-        type Type = super::VideoWidget;
+    impl ObjectSubclass for GstGtk4Widget {
+        const NAME: &'static str = "GstGtk4Widget";
+        type Type = super::GstGtk4Widget;
         type ParentType = gtk::Box;
     }
 
     #[glib::derived_properties]
-    impl ObjectImpl for VideoWidget {
+    impl ObjectImpl for GstGtk4Widget {
         fn constructed(&self) {
             self.parent_constructed();
 
@@ -150,7 +163,7 @@ mod imp {
         }
     }
 
-    impl WidgetImpl for VideoWidget {}
+    impl WidgetImpl for GstGtk4Widget {}
 
-    impl BoxImpl for VideoWidget {}
+    impl BoxImpl for GstGtk4Widget {}
 }

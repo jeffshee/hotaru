@@ -1,4 +1,4 @@
-/* clapper_widget.rs
+/* clapper.rs
  *
  * Copyright 2024 Jeff Shee
  *
@@ -22,23 +22,25 @@ use glib::Object;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
+use super::RendererWidget;
+
 glib::wrapper! {
     pub struct ClapperWidget(ObjectSubclass<imp::ClapperWidget>)
         @extends gtk::Box, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
-impl ClapperWidget {
-    pub fn new() -> Self {
-        Object::builder().build()
+impl RendererWidget for ClapperWidget {
+    fn with_filepath(filepath: &str) -> Self {
+        let uri = gio::File::for_path(filepath).uri();
+        Self::with_uri(&uri)
     }
 
-    pub fn with_filepath(filepath: &str) -> Self {
-        let uri = gio::File::for_path(filepath).uri();
+    fn with_uri(uri: &str) -> Self {
         Object::builder().property("uri", uri).build()
     }
 
-    pub fn widget_clone(&self) -> gtk::Box {
+    fn mirror(&self) -> gtk::Box {
         let widget = gtk::Box::builder().build();
         let paintable = self.paintable().unwrap();
         let picture = gtk::Picture::builder()
@@ -58,14 +60,25 @@ impl ClapperWidget {
         }
         widget
     }
+
+    fn play(&self) {
+        self.player().play();
+    }
+
+    fn pause(&self) {
+        self.player().pause();
+    }
+
+    fn stop(&self) {
+        self.player().stop();
+    }
 }
 
 mod imp {
-    use std::cell::RefCell;
-
     use super::*;
     use glib::Properties;
     use gtk::{gdk, subclass::prelude::*};
+    use std::cell::RefCell;
 
     #[derive(Properties, Default)]
     #[properties(wrapper_type = super::ClapperWidget)]
