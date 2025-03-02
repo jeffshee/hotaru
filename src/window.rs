@@ -60,6 +60,8 @@ impl HotaruApplicationWindow {
         Object::builder()
             .property("application", app)
             .property("window_type", window_type)
+            .property("title", Some(WINDOW_TITLE))
+            .property("decorated", false)
             .build()
     }
 
@@ -137,17 +139,18 @@ impl HotaruApplicationWindow {
     }
 
     fn set_hanabi_window_title(&self) {
-        // TODO: Dummy
-        let index = 0;
+        // TODO: improve this
+        let position = self.position();
         let state = object! {
-            position: [0, 0],
+            position: [position.x, position.y],
             keepAtBottom: true,
             keepMinimized: true,
             keepPosition: true,
         };
         let state_json = json::stringify(state);
 
-        let title = format!("@${HANABI_APPLICATION_ID}!${state_json}|${index}");
+        let title = format!("@{HANABI_APPLICATION_ID}!{state_json}");
+        println!("title: {title}");
         self.set_title(Some(title.as_str()));
     }
 }
@@ -162,7 +165,10 @@ pub struct Position {
 mod imp {
     use super::*;
     use glib::Properties;
-    use gtk::subclass::prelude::*;
+    use gtk::{
+        gdk::Display, style_context_add_provider_for_display, subclass::prelude::*, CssProvider,
+        STYLE_PROVIDER_PRIORITY_APPLICATION,
+    };
     use std::cell::RefCell;
 
     #[derive(Properties, Default)]
@@ -187,13 +193,22 @@ mod imp {
             self.parent_constructed();
 
             let obj = self.obj();
+
+            // Black background
+            let provider = CssProvider::new();
+            provider.load_from_string(".black-bg { background-color: black; }");
+            let display = Display::default().expect("Could not connect to a display");
+            style_context_add_provider_for_display(
+                &display,
+                &provider,
+                STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+            obj.set_css_classes(&["black-bg"]);
+
             let window_type = obj.window_type();
             println!("window_type: {window_type}");
             match window_type.as_str() {
                 "x11-desktop" => {
-                    obj.set_decorated(false);
-                    obj.set_title(Some(WINDOW_TITLE));
-
                     obj.connect_realize(move |window| {
                         window.set_x11_window_type_hint();
                         let position = window.position();
@@ -201,20 +216,19 @@ mod imp {
                     });
                 }
                 "wayland-layer-shell" => {
-                    obj.set_decorated(false);
-                    obj.set_title(Some(WINDOW_TITLE));
-                    obj.set_size_request(1920, 1080);
                     todo!()
                 }
                 "gnome-ext-hanabi" => {
-                    obj.set_decorated(false);
-                    obj.set_hanabi_window_title();
-                    obj.set_size_request(1920, 1080);
+                    obj.connect_realize(move |window| {
+                        window.set_hanabi_window_title();
+                    });
                 }
                 "standalone" => {
-                    obj.set_decorated(true);
-                    obj.set_title(Some(WINDOW_TITLE));
                     obj.set_default_size(1920, 1080);
+
+                    obj.connect_realize(move |window| {
+                        window.set_decorated(true);
+                    });
                 }
                 _ => {}
             }
@@ -235,6 +249,9 @@ mod imp {
                 match window.window_type().as_str() {
                     "x11-desktop" => {
                         window.set_x11_window_position(position.x, position.y);
+                    }
+                    "gnome-ext-hanabi" => {
+                        window.set_hanabi_window_title();
                     }
                     _ => {}
                 }
