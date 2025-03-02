@@ -17,10 +17,14 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
+use gdk_x11::X11Surface;
 use glib::Object;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use json::{self, object};
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::{AtomEnum, ConfigureWindowAux, ConnectionExt, PropMode};
+use x11rb::wrapper::ConnectionExt as _;
 
 use crate::application::HotaruApplication;
 
@@ -59,12 +63,36 @@ impl HotaruApplicationWindow {
             .build()
     }
 
-    fn set_x11_window_type_hint(&self) {
-        use gdk_x11::X11Surface;
-        use x11rb::connection::Connection;
-        use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, PropMode};
-        use x11rb::wrapper::ConnectionExt as _;
+    fn set_x11_window_position(&self, x: i32, y: i32) {
+        println!("set_x11_window_position: {x}, {y}");
+        if let Some(surface) = self.surface() {
+            if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
+                let xid = x11_surface.xid();
+                println!("xid: {xid}");
+                let (conn, _screen_num) = x11rb::connect(None).unwrap();
+                let position = ConfigureWindowAux::new().x(x).y(y);
 
+                let operation = move || {
+                    conn.configure_window(xid as u32, &position)
+                        .and_then(|_| conn.flush())
+                        .unwrap_or_else(|e| eprintln!("Failed to position window: {}", e));
+                };
+                if self.is_mapped() {
+                    operation();
+                }
+                self.connect_map(move |_window| {
+                    operation();
+                });
+            } else {
+                eprintln!("Failed to downcast Surface to X11Surface");
+            }
+        } else {
+            eprintln!("Failed to get Surface");
+        }
+    }
+
+    fn set_x11_window_type_hint(&self) {
+        println!("set_x11_window_type_hint");
         if let Some(surface) = self.surface() {
             if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
                 let xid = x11_surface.xid();
@@ -82,18 +110,23 @@ impl HotaruApplicationWindow {
                     .reply()
                     .unwrap()
                     .atom;
-                conn.change_property32(
-                    PropMode::REPLACE,
-                    xid as u32,
-                    net_wm_window_type,
-                    AtomEnum::ATOM,
-                    &[net_wm_window_type_desktop],
-                )
-                .unwrap();
 
+                let operation = move || {
+                    conn.change_property32(
+                        PropMode::REPLACE,
+                        xid as u32,
+                        net_wm_window_type,
+                        AtomEnum::ATOM,
+                        &[net_wm_window_type_desktop],
+                    )
+                    .and_then(|_| conn.flush())
+                    .unwrap_or_else(|e| eprintln!("Failed to set window type hint: {}", e));
+                };
+                if self.is_mapped() {
+                    operation();
+                }
                 self.connect_map(move |_window| {
-                    // Flush after the window is mapped, otherwise it will become a race condition
-                    conn.flush().unwrap();
+                    operation();
                 });
             } else {
                 eprintln!("Failed to downcast Surface to X11Surface");
@@ -119,6 +152,13 @@ impl HotaruApplicationWindow {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, glib::Boxed)]
+#[boxed_type(name = "Position")]
+pub struct Position {
+    pub x: i32,
+    pub y: i32,
+}
+
 mod imp {
     use super::*;
     use glib::Properties;
@@ -130,6 +170,8 @@ mod imp {
     pub struct HotaruApplicationWindow {
         #[property(get, construct_only)]
         window_type: RefCell<String>,
+        #[property(get, set)]
+        position: RefCell<Position>,
     }
 
     #[glib::object_subclass]
@@ -150,14 +192,17 @@ mod imp {
             match window_type.as_str() {
                 "x11-desktop" => {
                     obj.set_decorated(false);
-                    obj.set_size_request(1920, 1080);
+                    obj.set_title(Some(WINDOW_TITLE));
 
                     obj.connect_realize(move |window| {
                         window.set_x11_window_type_hint();
+                        let position = window.position();
+                        window.set_x11_window_position(position.x, position.y);
                     });
                 }
                 "wayland-layer-shell" => {
                     obj.set_decorated(false);
+                    obj.set_title(Some(WINDOW_TITLE));
                     obj.set_size_request(1920, 1080);
                     todo!()
                 }
@@ -176,7 +221,31 @@ mod imp {
         }
     }
 
-    impl WidgetImpl for HotaruApplicationWindow {}
+    impl WidgetImpl for HotaruApplicationWindow {
+        fn realize(&self) {
+            self.parent_realize();
+            println!("realize");
+            let obj = self.obj();
+
+            // Handle position changes after window realization
+            obj.connect_position_notify(move |window| {
+                println!("position_notify");
+                let position = window.position();
+
+                match window.window_type().as_str() {
+                    "x11-desktop" => {
+                        window.set_x11_window_position(position.x, position.y);
+                    }
+                    _ => {}
+                }
+            });
+        }
+
+        fn map(&self) {
+            self.parent_map();
+            println!("map");
+        }
+    }
 
     impl WindowImpl for HotaruApplicationWindow {}
 
