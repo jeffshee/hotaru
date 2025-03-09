@@ -1,21 +1,23 @@
-use gtk::gdk::{Display, Monitor};
+use gtk::gdk::{Display, Monitor, Rectangle};
 use gtk::prelude::*;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum LayoutError {
-    #[error("Failed to get monitors")]
-    FailedToGetMonitors,
-    #[error("No primary monitor")]
-    NoPrimaryMonitor,
-    #[error("Layout error: {0}")]
-    LayoutError(String),
+    #[error("MonitorInfo error")]
+    MonitorInfo,
+    #[error("No display")]
+    NoDisplay,
+    #[error("ListModel error: {0}")]
+    ListModel(String),
+    #[error("Downcast error")]
+    Downcast,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum SourceVariant {
+pub enum SourceIdentifier {
     Filepath { filepath: String },
     Uri { uri: String },
 }
@@ -30,8 +32,54 @@ pub enum SourceType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Source {
     #[serde(flatten)]
-    pub source: SourceVariant, // filepath or uri
-    pub r#type: SourceType, // video, web
+    pub identifier: SourceIdentifier,
+    pub r#type: SourceType,
+}
+
+#[derive(Debug, Clone)]
+struct MonitorInfo {
+    connector: String,
+    geometry: Rectangle,
+}
+
+impl MonitorInfo {
+    fn from_monitor(monitor: &Monitor) -> Result<Self, LayoutError> {
+        let connector = monitor
+            .connector()
+            .ok_or_else(|| LayoutError::MonitorInfo)?
+            .to_string();
+
+        Ok(Self {
+            connector,
+            geometry: monitor.geometry(),
+        })
+    }
+}
+
+fn get_monitor_info() -> Result<Vec<MonitorInfo>, LayoutError> {
+    let display = Display::default().ok_or(LayoutError::NoDisplay)?;
+
+    display
+        .monitors()
+        .into_iter()
+        .map(|monitor| {
+            let monitor = monitor.map_err(|e| LayoutError::ListModel(e.to_string()))?;
+            let monitor = monitor.downcast().map_err(|_| LayoutError::Downcast)?;
+            MonitorInfo::from_monitor(&monitor)
+        })
+        .collect()
+}
+
+fn find_primary_monitor(monitors: &[MonitorInfo]) -> Option<&MonitorInfo> {
+    monitors
+        .iter()
+        .find(|m| m.connector == "eDP-1") // Built-in monitor
+        .or_else(|| {
+            monitors
+                .iter()
+                .rev()
+                .max_by_key(|m| m.geometry.width() * m.geometry.height()) // The largest monitor
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -40,51 +88,32 @@ pub struct DefaultLayout {
     pub source: Option<Source>,
     #[serde(default = "default_primary_monitor")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub primary_monitor: Option<String>, // connector name, e.g. HDMI-0, DP-1
+    pub primary_monitor: Option<String>,
 }
 
-pub fn default_primary_monitor() -> Option<String> {
-    let monitors = match get_monitors() {
-        Ok(monitors) => monitors,
-        Err(_) => return None,
-    };
-
-    if monitors.is_empty() {
-        return None;
-    }
-
-    // Find built-in monitor or largest monitor
-    let primary_monitor = monitors
-        .iter()
-        .find(|monitor| monitor.connector().unwrap().to_string() == "eDP-1")
-        .or_else(|| {
-            monitors.iter().max_by_key(|monitor| {
-                let geometry = monitor.geometry();
-                geometry.width() * geometry.height()
-            })
-        });
-
-    primary_monitor.map(|monitor| monitor.connector().unwrap().to_string())
+fn default_primary_monitor() -> Option<String> {
+    let monitors = get_monitor_info().ok()?;
+    find_primary_monitor(&monitors).map(|m| m.connector.clone())
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum FinalSource {
-    Origin {
-        monitor: String, // connector name, e.g. HDMI-0, DP-1
+pub enum DisplayConfiguration {
+    PrimarySource {
+        monitor: String,
         #[serde(flatten)]
-        source: SourceVariant, // filepath or uri
-        r#type: SourceType, // video, web
+        source: SourceIdentifier,
+        r#type: SourceType,
     },
-    Mirror {
-        monitor: String,   // connector name, e.g. HDMI-0, DP-1
-        mirror_of: String, // connector name, e.g. HDMI-0, DP-1
+    MirroredDisplay {
+        monitor: String,
+        mirror_of: String,
     },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CustomLayout {
-    pub sources: Vec<FinalSource>,
+    pub configurations: Vec<DisplayConfiguration>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -94,84 +123,72 @@ pub enum Layout {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct FinalLayout(Vec<FinalSource>);
+pub struct FinalizedLayout(Vec<DisplayConfiguration>);
 
-pub fn get_monitors() -> Result<Vec<Monitor>, LayoutError> {
-    let display = Display::default().ok_or(LayoutError::FailedToGetMonitors)?;
-    let monitors: Vec<Monitor> = display
-        .monitors()
-        .into_iter()
-        .map(|monitor| {
-            monitor
-                .map_err(|_| LayoutError::FailedToGetMonitors)?
-                .downcast::<Monitor>()
-                .map_err(|_| LayoutError::FailedToGetMonitors)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(monitors)
+fn validate_monitor_exists(monitors: &[MonitorInfo], name: &str) -> bool {
+    monitors.iter().any(|m| m.connector == name)
 }
 
-fn monitor_exists(monitors: &Vec<Monitor>, monitor_name: &str) -> bool {
-    monitors
-        .iter()
-        .any(|m| m.connector().unwrap().to_string() == monitor_name)
+fn validate_configuration(monitors: &[MonitorInfo], config: &DisplayConfiguration) -> bool {
+    match config {
+        DisplayConfiguration::PrimarySource { monitor, .. } => {
+            validate_monitor_exists(monitors, monitor)
+        }
+        DisplayConfiguration::MirroredDisplay { monitor, mirror_of } => {
+            validate_monitor_exists(monitors, monitor)
+                && validate_monitor_exists(monitors, mirror_of)
+        }
+    }
 }
 
-pub fn finalize_layout(layout: Layout) -> Result<FinalLayout, LayoutError> {
-    let monitors: Vec<Monitor> = get_monitors()?;
+pub fn finalize_layout(layout: Layout) -> Result<FinalizedLayout, LayoutError> {
+    let monitors = get_monitor_info()?;
 
     match layout {
         Layout::Default(layout) => {
-            let mut final_layout = Vec::new();
-
-            let primary_monitor = match layout.primary_monitor {
-                Some(monitor) => monitor_exists(&monitors, &monitor).then_some(monitor),
-                None => default_primary_monitor(),
-            };
+            let primary_monitor = layout
+                .primary_monitor
+                .as_ref()
+                .filter(|name| validate_monitor_exists(&monitors, name))
+                .or_else(|| find_primary_monitor(&monitors).map(|m| &m.connector));
 
             let primary_monitor = match primary_monitor {
-                Some(monitor) => monitor,
-                None => return Ok(FinalLayout(vec![])),
+                Some(m) => m,
+                None => return Ok(FinalizedLayout(vec![])),
             };
 
-            match layout.source {
-                Some(Source { source, r#type }) => {
-                    final_layout.push(FinalSource::Origin {
-                        monitor: primary_monitor.clone(),
-                        source,
-                        r#type,
-                    });
-                }
-                None => return Ok(FinalLayout(vec![])),
+            let mut configurations = Vec::new();
+
+            if let Some(source) = layout.source {
+                configurations.push(DisplayConfiguration::PrimarySource {
+                    monitor: primary_monitor.clone(),
+                    source: source.identifier,
+                    r#type: source.r#type,
+                });
+            } else {
+                return Ok(FinalizedLayout(vec![]));
             }
 
-            monitors
+            let mirror_configs = monitors
                 .iter()
-                .filter(|monitor| {
-                    monitor.connector().unwrap().to_string() != primary_monitor.clone()
-                })
-                .cloned()
-                .for_each(|monitor| {
-                    final_layout.push(FinalSource::Mirror {
-                        monitor: monitor.connector().unwrap().to_string(),
-                        mirror_of: primary_monitor.clone(),
-                    })
+                .filter(|m| m.connector != *primary_monitor)
+                .map(|m| DisplayConfiguration::MirroredDisplay {
+                    monitor: m.connector.clone(),
+                    mirror_of: primary_monitor.clone(),
                 });
 
-            Ok(FinalLayout(final_layout))
+            configurations.extend(mirror_configs);
+
+            Ok(FinalizedLayout(configurations))
         }
         Layout::Custom(layout) => {
-            let final_layout: Vec<FinalSource> = layout
-                .sources
+            let valid_configs = layout
+                .configurations
                 .into_iter()
-                .filter(|source| match source {
-                    FinalSource::Origin { monitor, .. } => monitor_exists(&monitors, &monitor),
-                    FinalSource::Mirror { monitor, mirror_of } => {
-                        monitor_exists(&monitors, &monitor) && monitor_exists(&monitors, &mirror_of)
-                    }
-                })
-                .collect::<Vec<_>>();
-            Ok(FinalLayout(final_layout))
+                .filter(|cfg| validate_configuration(&monitors, cfg))
+                .collect();
+
+            Ok(FinalizedLayout(valid_configs))
         }
     }
 }
@@ -194,8 +211,8 @@ mod tests {
     fn print_monitors() {
         initialize();
 
-        get_monitors().unwrap().iter().for_each(|monitor| {
-            println!("Monitor: {:?}", monitor.connector().unwrap());
+        get_monitor_info().unwrap().iter().for_each(|monitor| {
+            println!("Monitor: {:?}, {:?}", monitor.connector, monitor.geometry);
         });
     }
 
@@ -205,7 +222,7 @@ mod tests {
 
         let default_layout = DefaultLayout {
             source: Some(Source {
-                source: SourceVariant::Filepath {
+                identifier: SourceIdentifier::Filepath {
                     filepath: "./test.webm".to_string(),
                 },
                 r#type: SourceType::Video,
@@ -227,24 +244,6 @@ mod tests {
             }
         }"#;
         let default_layout: DefaultLayout = serde_json::from_str(json).unwrap();
-        let layout = Layout::Default(default_layout);
-        let final_layout = finalize_layout(layout);
-        println!("{:?}", final_layout);
-    }
-
-    #[test]
-    fn test_finalize_default_layout2() {
-        initialize();
-
-        let default_layout = DefaultLayout {
-            source: Some(Source {
-                source: SourceVariant::Filepath {
-                    filepath: "./test.webm".to_string(),
-                },
-                r#type: SourceType::Video,
-            }),
-            primary_monitor: Some("DP-1".to_string()),
-        };
         let layout = Layout::Default(default_layout);
         let final_layout = finalize_layout(layout);
         println!("{:?}", final_layout);
@@ -276,27 +275,27 @@ mod tests {
         let layout = Layout::Default(default_layout);
         let final_layout = finalize_layout(layout).unwrap();
         println!("{:?}", final_layout);
-        assert_eq!(final_layout, FinalLayout(vec![]));
+        assert_eq!(final_layout, FinalizedLayout(vec![]));
     }
 
     #[test]
     fn test_custom_layout_to_json() {
         initialize();
 
-        let sources = vec![
-            FinalSource::Origin {
+        let configurations = vec![
+            DisplayConfiguration::PrimarySource {
                 monitor: "DP-4".to_string(),
-                source: SourceVariant::Filepath {
+                source: SourceIdentifier::Filepath {
                     filepath: "./test.webm".to_string(),
                 },
                 r#type: SourceType::Video,
             },
-            FinalSource::Mirror {
+            DisplayConfiguration::MirroredDisplay {
                 monitor: "DP-2".to_string(),
                 mirror_of: "DP-4".to_string(),
             },
         ];
-        let custom_layout = serde_json::to_string_pretty(&CustomLayout { sources }).unwrap();
+        let custom_layout = serde_json::to_string_pretty(&CustomLayout { configurations }).unwrap();
         println!("{}", custom_layout);
     }
 
@@ -305,7 +304,7 @@ mod tests {
         initialize();
 
         let json = r#"{
-            "sources": [
+            "configurations": [
                 {
                     "monitor": "DP-4",
                     "filepath": "./test.webm",
@@ -328,7 +327,7 @@ mod tests {
         initialize();
 
         let json = r#"{
-            "sources": [
+            "configurations": [
                 {
                     "monitor": "DP-4",
                     "filepath": "./test.webm",
@@ -352,12 +351,12 @@ mod tests {
         initialize();
 
         let json = r#"{
-            "sources": []
+            "configurations": []
         }"#;
         let custom_layout: CustomLayout = serde_json::from_str(json).unwrap();
         let custom_layout = Layout::Custom(custom_layout);
         let final_layout = finalize_layout(custom_layout).unwrap();
         println!("{:?}", final_layout);
-        assert_eq!(final_layout, FinalLayout(vec![]));
+        assert_eq!(final_layout, FinalizedLayout(vec![]));
     }
 }
