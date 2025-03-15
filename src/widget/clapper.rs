@@ -22,7 +22,7 @@ use glib::Object;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
-use super::RendererWidget;
+use super::{RendererWidget, RendererWidgetBuilder};
 
 glib::wrapper! {
     pub struct ClapperWidget(ObjectSubclass<imp::ClapperWidget>)
@@ -30,7 +30,7 @@ glib::wrapper! {
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
-impl RendererWidget for ClapperWidget {
+impl RendererWidgetBuilder for ClapperWidget {
     fn with_filepath(filepath: &str) -> Self {
         let uri = gio::File::for_path(filepath).uri();
         Self::with_uri(&uri)
@@ -39,7 +39,9 @@ impl RendererWidget for ClapperWidget {
     fn with_uri(uri: &str) -> Self {
         Object::builder().property("uri", uri).build()
     }
+}
 
+impl RendererWidget for ClapperWidget {
     fn mirror(&self) -> gtk::Box {
         let widget = gtk::Box::builder().build();
         let paintable = self.paintable().unwrap();

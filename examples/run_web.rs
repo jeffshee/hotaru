@@ -1,7 +1,7 @@
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use hotaru::application::HotaruApplication;
-use hotaru::widget::{RendererWidget, WebWidget};
+use hotaru::widget::{RendererWidget, RendererWidgetBuilder, WebWidget};
 use hotaru::window::{HotaruApplicationWindow, WindowType};
 
 fn main() -> glib::ExitCode {

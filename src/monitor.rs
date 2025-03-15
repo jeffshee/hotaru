@@ -1,7 +1,6 @@
 use glib::Object;
-use gtk::gdk::Display;
-use gtk::gdk::Monitor;
-use gtk::gdk::Rectangle;
+use gtk::gdk::prelude::MonitorExt as GdkMonitorExt;
+use gtk::gdk::{Display, Monitor, Rectangle};
 use gtk::gio::ListModel;
 use gtk::glib;
 use gtk::prelude::*;
@@ -11,13 +10,11 @@ use thiserror::Error;
 pub enum MonitorError {
     #[error("No display")]
     NoDisplay,
-    #[error("Monitor error: {0}")]
-    MonitorError(String),
     #[error("ListModel error: {0}")]
-    MonitorListModel(String),
+    ListModel(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MonitorInfo {
     pub connector: String,
     pub geometry: Rectangle,
@@ -32,10 +29,10 @@ impl MonitorListModelExt for ListModel {
     fn try_to_monitor_vec(&self) -> Result<Vec<Monitor>, MonitorError> {
         self.into_iter()
             .map(|item| {
-                item.map_err(|e| MonitorError::MonitorListModel(e.to_string()))?
+                item.map_err(|e| MonitorError::ListModel(e.to_string()))?
                     .downcast::<Monitor>()
                     .map_err(|o| {
-                        MonitorError::MonitorListModel(format!(
+                        MonitorError::ListModel(format!(
                             "Failed to downcast object to gdk::Monitor, object: {:?}",
                             o
                         ))
@@ -68,11 +65,26 @@ impl From<&Monitor> for MonitorInfo {
     }
 }
 
-glib::wrapper! {
-    pub struct MonitorTracker(ObjectSubclass<imp::MonitorTracker>);
+pub trait MonitorExt: GdkMonitorExt {
+    fn is_connector(&self, connector: &str) -> bool;
+    fn area(&self) -> i32;
 }
 
-impl MonitorTracker {
+impl MonitorExt for Monitor {
+    fn is_connector(&self, connector: &str) -> bool {
+        self.connector().is_some_and(|c| c == connector)
+    }
+
+    fn area(&self) -> i32 {
+        self.geometry().width() * self.geometry().height()
+    }
+}
+
+glib::wrapper! {
+    pub struct MonitorManager(ObjectSubclass<imp::MonitorManager>);
+}
+
+impl MonitorManager {
     pub fn new() -> Self {
         Object::new()
     }
@@ -83,23 +95,27 @@ impl MonitorTracker {
             .monitors())
     }
 
-    pub fn primary_monitor_info() -> Option<MonitorInfo> {
+    pub fn primary_monitor() -> Option<Monitor> {
         Self::monitors()
             .ok()
-            .and_then(|model| model.try_to_monitor_info_vec().ok())
+            .and_then(|model| model.try_to_monitor_vec().ok())
             .and_then(|monitors| {
                 monitors
                     .iter()
-                    .find(|m| m.connector == "eDP-1") // Built-in monitor
+                    .find(|m| m.is_connector("eDP-1")) // Built-in monitor
                     .map(Clone::clone)
                     .or_else(|| {
                         monitors
                             .iter()
                             .rev()
-                            .max_by_key(|m| m.geometry.width() * m.geometry.height()) // The largest monitor
+                            .max_by_key(|m| m.area()) // The largest monitor
                             .map(Clone::clone)
                     })
             })
+    }
+
+    pub fn primary_monitor_info() -> Option<MonitorInfo> {
+        Self::primary_monitor().map(|monitor| MonitorInfo::from(&monitor))
     }
 
     pub fn primary_monitor_connector() -> Option<String> {
@@ -114,21 +130,21 @@ mod imp {
     use std::sync::OnceLock;
 
     #[derive(Default)]
-    pub struct MonitorTracker;
+    pub struct MonitorManager;
 
     #[glib::object_subclass]
-    impl ObjectSubclass for MonitorTracker {
-        const NAME: &'static str = "MonitorTracker";
-        type Type = super::MonitorTracker;
+    impl ObjectSubclass for MonitorManager {
+        const NAME: &'static str = "MonitorManager";
+        type Type = super::MonitorManager;
         type ParentType = Object;
     }
 
-    impl ObjectImpl for MonitorTracker {
+    impl ObjectImpl for MonitorManager {
         fn constructed(&self) {
             self.parent_constructed();
             let obj = self.obj();
 
-            let monitors = super::MonitorTracker::monitors().unwrap();
+            let monitors = super::MonitorManager::monitors().unwrap();
             monitors.connect_items_changed(glib::clone!(
                 #[weak]
                 obj,
@@ -154,5 +170,44 @@ mod imp {
                     .build()]
             })
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    fn init() {
+        INIT.call_once(|| {
+            gtk::init().unwrap();
+        });
+    }
+
+    #[test]
+    fn test_monitors() {
+        init();
+
+        let monitors = MonitorManager::monitors();
+        assert!(monitors.is_ok());
+
+        let primary_monitor = MonitorManager::primary_monitor();
+        assert!(primary_monitor.is_some());
+
+        let primary_monitor_connector = MonitorManager::primary_monitor_connector();
+        assert!(primary_monitor_connector.is_some());
+        assert_ne!(
+            primary_monitor_connector.clone().unwrap(),
+            "Unknown".to_string()
+        );
+        println!("Primary monitor: {}", primary_monitor_connector.unwrap());
+
+        let monitors = monitors.unwrap().try_to_monitor_info_vec();
+        assert!(monitors.is_ok());
+        let monitors = monitors.unwrap();
+        assert_ne!(monitors.len(), 0);
+        println!("Monitors: {:#?}", monitors)
     }
 }

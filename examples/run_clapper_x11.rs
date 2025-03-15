@@ -1,19 +1,33 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
+use gtk::gdk::prelude::MonitorExt as _;
 use gtk::gio::ListModel;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 use hotaru::application::HotaruApplication;
 use hotaru::gst_utils;
-use hotaru::layout::DisplayConfiguration::{MirroredDisplay, PrimarySource};
+use hotaru::layout::MonitorConfig::{Mirror, Source};
 use hotaru::layout::SourceIdentifier::{Filepath, Uri};
-use hotaru::layout::{finalize_layout, DefaultLayout, Layout};
-use hotaru::monitor::{MonitorInfo, MonitorListModelExt as _, MonitorTracker};
-use hotaru::widget::{ClapperWidget, RendererWidget};
+use hotaru::layout::{DefaultLayout, Layout};
+use hotaru::monitor::{MonitorExt, MonitorInfo, MonitorListModelExt as _, MonitorManager};
+use hotaru::widget::{Renderer, RendererWidget};
 use hotaru::window::{HotaruApplicationWindow, Position, WindowType};
 
-fn main() -> Result<glib::ExitCode> {
+const DEFAULT_LAYOUT_JSON: &str = r#"{
+    "source": {
+        "filepath": "./test.webm",
+        "type": "video"
+    }
+}"#;
+
+// const DEFAULT_LAYOUT_JSON: &str = r#"{
+//     "source": {
+//         "uri": "https://jeffshee.github.io/herta-wallpaper/",
+//         "type": "web"
+//     }
+// }"#;
+
+fn main() -> glib::ExitCode {
     gst::init().unwrap();
     gtk::init().unwrap();
     gst_utils::setup_gst();
@@ -24,11 +38,11 @@ fn main() -> Result<glib::ExitCode> {
     );
 
     let app_clone = app.clone();
-    let monitor_tracker = MonitorTracker::new();
+    let monitor_tracker = MonitorManager::new();
     monitor_tracker.connect_closure(
         "monitor-changed",
         false,
-        glib::closure_local!(move |_monitor_tracker: MonitorTracker, list: ListModel| {
+        glib::closure_local!(move |_monitor_tracker: MonitorManager, list: ListModel| {
             let monitors: Vec<MonitorInfo> = list.try_to_monitor_info_vec().unwrap();
             println!("Monitor changed: {:?}", monitors);
             app_clone.windows().into_iter().for_each(|w| w.close());
@@ -38,101 +52,81 @@ fn main() -> Result<glib::ExitCode> {
 
     app.connect_activate(build_ui);
 
-    Ok(app.run())
+    app.run()
 }
 
 fn build_ui(app: &HotaruApplication) {
-    let json = r#"{
-        "source": {
-            "filepath": "./test.webm",
-            "type": "video"
-        }
-    }"#;
-    let default_layout: DefaultLayout = serde_json::from_str(json).unwrap();
-    let layout = Layout::Default(default_layout);
-    let monitors = MonitorTracker::monitors()
-        .unwrap()
-        .try_to_monitor_info_vec()
-        .unwrap();
-    let monitors_clone = monitors.clone();
-
-    let layout = finalize_layout(monitors_clone, layout).unwrap();
-
     let window_type = WindowType::X11Desktop;
-    let mut source_widgets = HashMap::new();
+    let monitors = MonitorManager::monitors()
+        .unwrap()
+        .try_to_monitor_vec()
+        .unwrap();
 
-    let monitors_clone = monitors.clone();
+    let default_layout: DefaultLayout = serde_json::from_str(DEFAULT_LAYOUT_JSON).unwrap();
+    let layout = Layout::Default(default_layout);
+    let final_layout = layout.finalize(&monitors).unwrap();
 
-    // First pass: process all primary sources
-    layout
-        .0
+    let mut source_renderers = HashMap::new();
+
+    // First pass: process source
+    final_layout
+        .configs
         .iter()
-        .filter(|c| matches!(c, PrimarySource { .. }))
+        .filter(|c| matches!(c, Source { .. }))
         .for_each(|display_config| {
-            if let PrimarySource {
+            if let Source {
                 monitor,
                 source,
                 r#type,
             } = display_config
             {
-                let monitor = monitors_clone
-                    .iter()
-                    .find(|m| m.connector == monitor.to_owned())
-                    .unwrap();
-                let geometry = monitor.geometry;
-                let window = HotaruApplicationWindow::new(app, &window_type);
+                let monitor = monitors.iter().find(|m| m.is_connector(monitor)).unwrap();
+                let geometry = monitor.geometry();
 
+                // Create window
+                let window = HotaruApplicationWindow::new(app, &window_type);
                 window.set_size_request(geometry.width(), geometry.height());
                 window.set_position(Position {
                     x: geometry.x(),
                     y: geometry.y(),
                 });
 
-                let widget = match source {
-                    Filepath { filepath } => match r#type {
-                        hotaru::layout::SourceType::Video => ClapperWidget::with_filepath(filepath),
-                        hotaru::layout::SourceType::Web => todo!(),
-                    },
-                    Uri { uri } => match r#type {
-                        hotaru::layout::SourceType::Video => ClapperWidget::with_uri(uri),
-                        hotaru::layout::SourceType::Web => todo!(),
-                    },
+                let renderer = match source {
+                    Filepath { filepath } => Renderer::with_filepath(filepath, r#type),
+                    Uri { uri } => Renderer::with_uri(uri, r#type),
                 };
+                let widget = renderer.as_widget();
 
-                window.set_child(Some(&widget));
+                window.set_child(Some(widget));
                 window.present();
-                widget.play();
-                source_widgets.insert(monitor.connector.clone(), widget);
+                renderer.play();
+
+                source_renderers.insert(monitor.connector().unwrap().to_string(), renderer);
             }
         });
 
-    let monitors_clone = monitors.clone();
-
-    // Second pass: process mirrored displays after primary sources are created
-    layout
-        .0
+    // Second pass: process mirror
+    final_layout
+        .configs
         .iter()
-        .filter(|c| matches!(c, MirroredDisplay { .. }))
+        .filter(|c| matches!(c, Mirror { .. }))
         .for_each(|display_config| {
-            if let MirroredDisplay { monitor, mirror_of } = display_config {
-                if let Some(source_widget) = source_widgets.get(mirror_of) {
-                    let monitor = monitors_clone
-                        .iter()
-                        .find(|m| m.connector == monitor.to_owned())
-                        .unwrap();
-                    let geometry = monitor.geometry;
-                    let mirror_window = HotaruApplicationWindow::new(app, &window_type);
+            if let Mirror { monitor, mirror_of } = display_config {
+                if let Some(source_widget) = source_renderers.get(mirror_of) {
+                    let monitor = monitors.iter().find(|m| m.is_connector(monitor)).unwrap();
+                    let geometry = monitor.geometry();
 
-                    mirror_window.set_size_request(geometry.width(), geometry.height());
-                    mirror_window.set_position(Position {
+                    // Create window
+                    let window = HotaruApplicationWindow::new(app, &window_type);
+                    window.set_size_request(geometry.width(), geometry.height());
+                    window.set_position(Position {
                         x: geometry.x(),
                         y: geometry.y(),
                     });
-                    mirror_window.set_title(Some(&format!("Mirror of {}", mirror_of)));
 
-                    let mirrored_widget = source_widget.mirror();
-                    mirror_window.set_child(Some(&mirrored_widget));
-                    mirror_window.present();
+                    let widget = source_widget.mirror();
+                    window.set_child(Some(&widget));
+                    window.present();
                 }
             }
         });
