@@ -20,12 +20,20 @@ const DEFAULT_LAYOUT_JSON: &str = r#"{
     }
 }"#;
 
-// const DEFAULT_LAYOUT_JSON: &str = r#"{
-//     "source": {
-//         "uri": "https://jeffshee.github.io/herta-wallpaper/",
-//         "type": "web"
-//     }
-// }"#;
+const CUSTOM_LAYOUT_JSON: &str = r#"{
+    "configs": [
+        {
+            "monitor": "DP-4",
+            "filepath": "./test.webm",
+            "type": "video"
+        },
+        {
+            "monitor": "DP-2",
+            "uri": "https://jeffshee.github.io/herta-wallpaper/",
+            "type": "web"
+        }
+    ]
+}"#;
 
 fn main() -> glib::ExitCode {
     gst::init().unwrap();
@@ -64,6 +72,9 @@ fn build_ui(app: &HotaruApplication) {
 
     let default_layout: DefaultLayout = serde_json::from_str(DEFAULT_LAYOUT_JSON).unwrap();
     let layout = Layout::Default(default_layout);
+    // let custom_layout: CustomLayout = serde_json::from_str(CUSTOM_LAYOUT_JSON).unwrap();
+    // let layout = Layout::Custom(custom_layout);
+
     let final_layout = layout.finalize(&monitors).unwrap();
 
     let mut source_renderers = HashMap::new();
@@ -95,9 +106,8 @@ fn build_ui(app: &HotaruApplication) {
                     Filepath { filepath } => Renderer::with_filepath(filepath, r#type),
                     Uri { uri } => Renderer::with_uri(uri, r#type),
                 };
-                let widget = renderer.as_widget();
 
-                window.set_child(Some(widget));
+                window.set_child(Some(renderer.widget()));
                 window.present();
                 renderer.play();
 

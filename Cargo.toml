@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.97"
 clap = { version = "4.5.29", features = ["derive"] }
+enum_dispatch = "0.3.13"
 gdk-x11 = { version = "0.9.0", package = "gdk4-x11" }
 gettext-rs = { version = "0.7.0", features = ["gettext-system"] }
 gst = { version = "0.23.0", package = "gstreamer" }

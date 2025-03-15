@@ -5,7 +5,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum LayoutError {
-    #[error("Monitor error: {0}")]
+    #[error(transparent)]
     MonitorError(#[from] MonitorError),
 }
 
