@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.97"
+clap = { version = "4.5.29", features = ["derive"] }
 gdk-x11 = { version = "0.9.0", package = "gdk4-x11" }
 gettext-rs = { version = "0.7.0", features = ["gettext-system"] }
 gst = { version = "0.23.0", package = "gstreamer" }
@@ -12,6 +14,10 @@ gst-plugin-gtk4 = { version = "0.13.0" }
 gst-video = { version = "0.23.0", package = "gstreamer-video" }
 gtk = { version = "0.9.0", package = "gtk4" }
 json = "0.12.4"
+serde = { version = "1.0.218", features = ["derive"] }
+serde_json = "1.0.140"
+serde_with = "3.12.0"
+thiserror = "2.0.12"
 webkit = { version = "0.4.0", package = "webkit6" }
 x11rb = "0.13.1"
 
