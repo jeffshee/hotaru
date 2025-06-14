@@ -1,362 +1,472 @@
-use crate::monitor::{MonitorError, MonitorExt, MonitorManager};
-use gtk::gdk::{prelude::MonitorExt as _, Monitor};
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
+use std::collections::HashMap;
 
-#[derive(Error, Debug)]
-pub enum LayoutError {
-    #[error(transparent)]
-    MonitorError(#[from] MonitorError),
+use serde::{Deserialize, Serialize};
+
+use crate::monitor::{MonitorInfo, MonitorMap};
+
+// Live Wallpaper Config
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct LiveWallpaperConfig {
+    pub mode: WallpaperMode,
+    pub monitors: Vec<MonitorConfig>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum WallpaperMode {
+    WallpaperPerMonitor,
+    CloneSingleWallpaper,
+    StretchSingleWallpaper,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
-pub enum SourceIdentifier {
+pub enum MonitorConfig {
+    Primary {
+        monitor: String,
+        wallpaper_type: WallpaperType,
+        #[serde(flatten)]
+        wallpaper_source: WallpaperSource,
+    },
+    Clone {
+        monitor: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        clone_source: Option<String>,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+#[serde(rename_all = "snake_case")]
+pub enum WallpaperSource {
     Filepath { filepath: String },
     Uri { uri: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SourceType {
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum WallpaperType {
     Video,
     Web,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Source {
-    #[serde(flatten)]
-    pub identifier: SourceIdentifier,
-    pub r#type: SourceType,
+// Window Layout
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WindowLayout {
+    pub windows: Vec<WindowInfo>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct DefaultLayout {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<Source>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub primary_monitor: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(untagged)]
-pub enum MonitorConfig {
-    Source {
+pub enum WindowInfo {
+    Primary {
         monitor: String,
-        #[serde(flatten)]
-        source: SourceIdentifier,
-        r#type: SourceType,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        window_title: String,
+        wallpaper_type: WallpaperType,
+        wallpaper_source: WallpaperSource,
     },
-    Mirror {
+    Clone {
         monitor: String,
-        mirror_of: String,
+        window_x: i32,
+        window_y: i32,
+        window_width: i32,
+        window_height: i32,
+        window_title: String,
+        clone_source: String,
     },
 }
+// SourceConfig keyed by wallpaper_source
 
-impl MonitorConfig {
-    pub fn is_valid(&self, monitors: &[Monitor]) -> bool {
-        match self {
-            MonitorConfig::Source {
-                monitor,
-                source: _,
-                r#type: _,
-            } => monitors.iter().any(|m| m.is_connector(monitor)),
-            MonitorConfig::Mirror { monitor, mirror_of } => {
-                monitor != mirror_of
-                    && monitors.iter().any(|m| m.is_connector(monitor))
-                    && monitors.iter().any(|m| m.is_connector(mirror_of))
-            }
-        }
+type SourceConfigMap = HashMap<String, SourceConfig>;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct SourceConfig {
+    pub is_mute: bool,
+    pub audio_volume: f32,
+    pub content_fit: ContentFit,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum ContentFit {
+    Fill,
+    Contain,
+    Cover,
+    ScaleDown,
+}
+
+// Conversion
+
+pub fn convert_to_window_layout(
+    config: &LiveWallpaperConfig,
+    monitor_map: &MonitorMap,
+) -> WindowLayout {
+    match config.mode {
+        WallpaperMode::WallpaperPerMonitor => handle_per_monitor(config, &monitor_map),
+        WallpaperMode::CloneSingleWallpaper => handle_clone(config, &monitor_map),
+        WallpaperMode::StretchSingleWallpaper => handle_stretch(config, &monitor_map),
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct FinalLayout {
-    pub configs: Vec<MonitorConfig>,
+fn handle_per_monitor(config: &LiveWallpaperConfig, monitor_map: &MonitorMap) -> WindowLayout {
+    let mut windows = Vec::new();
+
+    for monitor in &config.monitors {
+        if let MonitorConfig::Primary {
+            monitor,
+            wallpaper_type,
+            wallpaper_source,
+        } = monitor
+        {
+            if let Some(MonitorInfo {
+                x,
+                y,
+                width,
+                height,
+            }) = monitor_map.get(monitor)
+            {
+                windows.push(WindowInfo::Primary {
+                    monitor: monitor.clone(),
+                    window_x: *x,
+                    window_y: *y,
+                    window_width: *width,
+                    window_height: *height,
+                    window_title: format!("Live Wallpaper - {monitor}"),
+                    wallpaper_type: *wallpaper_type,
+                    wallpaper_source: wallpaper_source.clone(),
+                })
+            }
+        }
+    }
+
+    WindowLayout { windows }
 }
 
-pub type CustomLayout = FinalLayout;
+fn handle_clone(config: &LiveWallpaperConfig, monitor_map: &MonitorMap) -> WindowLayout {
+    let mut windows = Vec::new();
+    let mut primary = None;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Layout {
-    Default(DefaultLayout),
-    Custom(CustomLayout),
-}
+    // Add the primary
+    if let Some(MonitorConfig::Primary {
+        monitor,
+        wallpaper_type,
+        wallpaper_source,
+    }) = config
+        .monitors
+        .iter()
+        .find(|m| matches!(m, MonitorConfig::Primary { .. }))
+    {
+        if let Some(MonitorInfo {
+            x,
+            y,
+            width,
+            height,
+        }) = monitor_map.get(monitor)
+        {
+            primary = Some(monitor.clone());
 
-impl Layout {
-    pub fn finalize(&self, monitors: &[Monitor]) -> Result<FinalLayout, LayoutError> {
-        match self {
-            Layout::Default(layout) => {
-                // Validate primary monitor
-                let primary_monitor = layout
-                    .primary_monitor
-                    .as_ref()
-                    .filter(|name| monitors.iter().any(|monitor| monitor.is_connector(name)))
-                    .map(|s| s.to_owned())
-                    .or_else(MonitorManager::primary_monitor_connector);
+            windows.push(WindowInfo::Primary {
+                monitor: monitor.clone(),
+                window_x: *x,
+                window_y: *y,
+                window_width: *width,
+                window_height: *height,
+                window_title: format!("Live Wallpaper - {monitor}"),
+                wallpaper_type: *wallpaper_type,
+                wallpaper_source: wallpaper_source.clone(),
+            })
+        }
+    }
 
-                let primary_monitor = match primary_monitor {
-                    Some(monitor) => monitor,
-                    None => return Ok(FinalLayout::default()),
-                };
-
-                let mut configs = Vec::new();
-
-                // Add source config
-                match layout.source.as_ref() {
-                    Some(source) => {
-                        configs.push(MonitorConfig::Source {
-                            monitor: primary_monitor.clone(),
-                            source: source.identifier.clone(),
-                            r#type: source.r#type.clone(),
-                        });
-                    }
-                    None => return Ok(FinalLayout::default()),
-                }
-
-                // Add mirror configs
-                let mirror_configs = monitors
-                    .iter()
-                    .filter(|monitor| {
-                        !monitor.is_connector(&primary_monitor) && monitor.connector().is_some()
+    // Add the clones
+    if let Some(primary_monitor) = primary {
+        for monitor in &config.monitors {
+            if let MonitorConfig::Clone { monitor, .. } = monitor {
+                if let Some(MonitorInfo {
+                    x,
+                    y,
+                    width,
+                    height,
+                }) = monitor_map.get(monitor)
+                {
+                    windows.push(WindowInfo::Clone {
+                        monitor: monitor.clone(),
+                        window_x: *x,
+                        window_y: *y,
+                        window_width: *width,
+                        window_height: *height,
+                        window_title: format!(
+                            "Live Wallpaper - {monitor} (Clone of {primary_monitor})"
+                        ),
+                        clone_source: primary_monitor.clone(),
                     })
-                    .map(|monitor| MonitorConfig::Mirror {
-                        monitor: monitor.connector().unwrap().to_string(), // it's safe to unwrap here
-                        mirror_of: primary_monitor.clone(),
-                    });
-
-                configs.extend(mirror_configs);
-
-                Ok(FinalLayout { configs })
-            }
-            Layout::Custom(layout) => {
-                let configs = layout
-                    .configs
-                    .iter()
-                    .filter(|cfg| cfg.is_valid(&monitors))
-                    .cloned()
-                    .collect();
-                Ok(FinalLayout { configs })
+                }
             }
         }
     }
+
+    WindowLayout { windows }
+}
+
+fn handle_stretch(config: &LiveWallpaperConfig, monitor_map: &MonitorMap) -> WindowLayout {
+    let mut windows = Vec::new();
+
+    // Calculate bounding box, given the leftmost rect has x == 0 and the topmost rect has y == 0
+    let (box_width, box_height) = monitor_map.values().fold(
+        (0, 0),
+        |acc,
+         MonitorInfo {
+             x,
+             y,
+             width,
+             height,
+         }| { (acc.0.max(*x + *width), acc.1.max(*y + *height)) },
+    );
+
+    if let Some(MonitorConfig::Primary {
+        wallpaper_type,
+        wallpaper_source,
+        ..
+    }) = config.monitors.first()
+    {
+        windows.push(WindowInfo::Primary {
+            monitor: "STRETCH".to_string(),
+            window_x: 0,
+            window_y: 0,
+            window_width: box_width,
+            window_height: box_height,
+            window_title: "Live Wallpaper - STRETCH".to_string(),
+            wallpaper_type: *wallpaper_type,
+            wallpaper_source: wallpaper_source.clone(),
+        });
+    }
+
+    WindowLayout { windows }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::monitor::MonitorListModelExt;
-    use std::sync::Once;
-
-    static INIT: Once = Once::new();
-
-    fn init() {
-        INIT.call_once(|| {
-            gtk::init().unwrap();
-        });
-    }
 
     #[test]
-    fn test_default_layout_to_json() {
-        let default_layout = DefaultLayout {
-            source: Some(Source {
-                identifier: SourceIdentifier::Filepath {
-                    filepath: "./test.webm".to_string(),
+    fn test_wallpaper_per_monitor() {
+        let config = LiveWallpaperConfig {
+            mode: WallpaperMode::WallpaperPerMonitor,
+            monitors: vec![
+                MonitorConfig::Primary {
+                    monitor: "DP-1".into(),
+                    wallpaper_type: WallpaperType::Video,
+                    wallpaper_source: WallpaperSource::Filepath {
+                        filepath: "/videos/test.mp4".into(),
+                    },
                 },
-                r#type: SourceType::Video,
-            }),
-            primary_monitor: None,
+                MonitorConfig::Primary {
+                    monitor: "DP-2".into(),
+                    wallpaper_type: WallpaperType::Web,
+                    wallpaper_source: WallpaperSource::Uri {
+                        uri: "https://example.com".into(),
+                    },
+                },
+            ],
         };
 
-        let serialized = serde_json::to_string_pretty(&default_layout).unwrap();
-        println!("{}", serialized);
+        let monitor_map = HashMap::from([
+            (
+                "DP-1".to_string(),
+                MonitorInfo {
+                    x: 0,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+            ),
+            (
+                "DP-2".to_string(),
+                MonitorInfo {
+                    x: 1920,
+                    y: 0,
+                    width: 2560,
+                    height: 1440,
+                },
+            ),
+        ]);
 
-        let json = r#"{
-            "source": {
-                "filepath": "./test.webm",
-                "type": "video"
+        let layout = convert_to_window_layout(&config, &monitor_map);
+
+        assert_eq!(layout.windows.len(), 2);
+
+        let mut dp1_found = false;
+        let mut dp2_found = false;
+
+        for window in &layout.windows {
+            match window {
+                WindowInfo::Primary {
+                    monitor,
+                    window_x,
+                    window_y,
+                    window_width,
+                    window_height,
+                    ..
+                } => {
+                    if monitor == "DP-1" {
+                        assert_eq!(*window_x, 0);
+                        assert_eq!(*window_y, 0);
+                        assert_eq!(*window_width, 1920);
+                        assert_eq!(*window_height, 1080);
+                        dp1_found = true;
+                    }
+                    if monitor == "DP-2" {
+                        assert_eq!(*window_x, 1920);
+                        assert_eq!(*window_y, 0);
+                        assert_eq!(*window_width, 2560);
+                        assert_eq!(*window_height, 1440);
+                        dp2_found = true;
+                    }
+                }
+                _ => panic!("Unexpected clone window in per-monitor mode"),
             }
-        }"#;
+        }
 
-        let deserialized: DefaultLayout = serde_json::from_str(json).unwrap();
-        assert_eq!(default_layout, deserialized);
+        assert!(dp1_found && dp2_found);
     }
 
     #[test]
-    fn test_finalize_default_layout() {
-        init();
-        let monitors = MonitorManager::monitors()
-            .unwrap()
-            .try_to_monitor_vec()
-            .unwrap();
+    fn test_clone_single_wallpaper() {
+        let config = LiveWallpaperConfig {
+            mode: WallpaperMode::CloneSingleWallpaper,
+            monitors: vec![
+                MonitorConfig::Primary {
+                    monitor: "DP-1".into(),
+                    wallpaper_type: WallpaperType::Video,
+                    wallpaper_source: WallpaperSource::Filepath {
+                        filepath: "/videos/main.mp4".into(),
+                    },
+                },
+                MonitorConfig::Clone {
+                    monitor: "DP-2".into(),
+                    clone_source: None,
+                },
+            ],
+        };
 
-        let json = r#"{
-            "source": {
-                "filepath": "./test.webm",
-                "type": "video"
+        let monitor_map = HashMap::from([
+            (
+                "DP-1".to_string(),
+                MonitorInfo {
+                    x: 0,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+            ),
+            (
+                "DP-2".to_string(),
+                MonitorInfo {
+                    x: 1920,
+                    y: 0,
+                    width: 1920,
+                    height: 1080,
+                },
+            ),
+        ]);
+
+        let layout = convert_to_window_layout(&config, &monitor_map);
+
+        assert_eq!(layout.windows.len(), 2);
+
+        let mut primary_found = false;
+        let mut clone_found = false;
+
+        for window in &layout.windows {
+            match window {
+                WindowInfo::Primary { monitor, .. } => {
+                    assert_eq!(monitor, "DP-1");
+                    primary_found = true;
+                }
+                WindowInfo::Clone {
+                    monitor,
+                    clone_source,
+                    ..
+                } => {
+                    assert_eq!(monitor, "DP-2");
+                    assert_eq!(clone_source, "DP-1");
+                    clone_found = true;
+                }
             }
-        }"#;
+        }
 
-        let default_layout: DefaultLayout = serde_json::from_str(json).unwrap();
-        let layout = Layout::Default(default_layout);
-        let final_layout = layout.finalize(&monitors).unwrap();
-
-        println!("{:#?}", final_layout);
-        assert_ne!(final_layout.configs.len(), 0);
+        assert!(primary_found && clone_found);
     }
 
     #[test]
-    fn test_finalize_default_layout_with_primary_monitor() {
-        init();
-        let monitors = MonitorManager::monitors()
-            .unwrap()
-            .try_to_monitor_vec()
-            .unwrap();
-
-        let json = r#"{
-            "source": {
-                "uri": "https://jeffshee.github.io/herta-wallpaper/",
-                "type": "web"
-            },
-            "primary_monitor": "eDP-1"
-        }"#;
-
-        let default_layout: DefaultLayout = serde_json::from_str(json).unwrap();
-        let layout = Layout::Default(default_layout);
-        let final_layout = layout.finalize(&monitors).unwrap();
-
-        println!("{:#?}", final_layout);
-        assert_ne!(final_layout.configs.len(), 0);
-    }
-
-    #[test]
-    fn test_finalize_default_layout_empty() {
-        init();
-        let monitors = MonitorManager::monitors()
-            .unwrap()
-            .try_to_monitor_vec()
-            .unwrap();
-
-        let json = r#"{}"#;
-        let default_layout: DefaultLayout = serde_json::from_str(json).unwrap();
-        let layout = Layout::Default(default_layout);
-        let final_layout = layout.finalize(&monitors).unwrap();
-
-        println!("{:#?}", final_layout);
-        assert_eq!(final_layout, FinalLayout::default());
-    }
-
-    #[test]
-    fn test_custom_layout_to_json() {
-        let configs = vec![
-            MonitorConfig::Source {
-                monitor: "DP-4".to_string(),
-                source: SourceIdentifier::Filepath {
-                    filepath: "./test.webm".to_string(),
+    fn test_stretch_single_wallpaper() {
+        let config = LiveWallpaperConfig {
+            mode: WallpaperMode::StretchSingleWallpaper,
+            monitors: vec![MonitorConfig::Primary {
+                monitor: "STRETCH".into(),
+                wallpaper_type: WallpaperType::Video,
+                wallpaper_source: WallpaperSource::Filepath {
+                    filepath: "/videos/wide.mp4".into(),
                 },
-                r#type: SourceType::Video,
-            },
-            MonitorConfig::Mirror {
-                monitor: "DP-2".to_string(),
-                mirror_of: "DP-4".to_string(),
-            },
-        ];
-        let custom_layout = CustomLayout { configs };
+            }],
+        };
 
-        let serialized = serde_json::to_string_pretty(&custom_layout).unwrap();
-        println!("{}", serialized);
-
-        let json = r#"{
-            "configs": [
-                {
-                "monitor": "DP-4",
-                "filepath": "./test.webm",
-                "type": "video"
+        let monitor_map = HashMap::from([
+            (
+                "eDP-1".to_string(),
+                MonitorInfo {
+                    x: 0,
+                    y: 1600,
+                    width: 1920,
+                    height: 1080,
                 },
-                {
-                "monitor": "DP-2",
-                "mirror_of": "DP-4"
-                }
-            ]
-        }"#;
-
-        let deserialized: CustomLayout = serde_json::from_str(json).unwrap();
-        assert_eq!(custom_layout, deserialized);
-    }
-
-    #[test]
-    fn test_finalize_custom_layout() {
-        init();
-        let monitors = MonitorManager::monitors()
-            .unwrap()
-            .try_to_monitor_vec()
-            .unwrap();
-
-        let json = r#"{
-            "configs": [
-                {
-                    "monitor": "DP-4",
-                    "filepath": "./test.webm",
-                    "type": "video"
+            ),
+            (
+                "DP-1".to_string(),
+                MonitorInfo {
+                    x: 1920,
+                    y: 600,
+                    width: 2560,
+                    height: 1440,
                 },
-                {
-                    "monitor": "DP-2",
-                    "mirror_of": "DP-4"
-                }
-            ]
-        }"#;
-        let custom_layout: CustomLayout = serde_json::from_str(json).unwrap();
-        let custom_layout = Layout::Custom(custom_layout);
-        let final_layout = custom_layout.finalize(&monitors).unwrap();
-
-        println!("{:#?}", final_layout);
-    }
-
-    #[test]
-    fn test_finalize_custom_layout_multi() {
-        init();
-        let monitors = MonitorManager::monitors()
-            .unwrap()
-            .try_to_monitor_vec()
-            .unwrap();
-
-        let json = r#"{
-            "configs": [
-                {
-                    "monitor": "DP-4",
-                    "filepath": "./test.webm",
-                    "type": "video"
+            ),
+            (
+                "DP-2".to_string(),
+                MonitorInfo {
+                    x: 4480,
+                    y: 0,
+                    width: 1440,
+                    height: 2560,
                 },
-                {
-                    "monitor": "DP-2",
-                    "uri": "https://jeffshee.github.io/herta-wallpaper/",
-                    "type": "web"
-                }
-            ]
-        }"#;
-        let custom_layout: CustomLayout = serde_json::from_str(json).unwrap();
-        let custom_layout = Layout::Custom(custom_layout);
+            ),
+        ]);
 
-        let final_layout = custom_layout.finalize(&monitors).unwrap();
-        println!("{:#?}", final_layout);
-    }
+        let layout = convert_to_window_layout(&config, &monitor_map);
 
-    #[test]
-    fn test_finalize_custom_layout_empty() {
-        init();
-        let monitors = MonitorManager::monitors()
-            .unwrap()
-            .try_to_monitor_vec()
-            .unwrap();
+        assert_eq!(layout.windows.len(), 1);
 
-        let json = r#"{
-            "configs": []
-        }"#;
-        let custom_layout: CustomLayout = serde_json::from_str(json).unwrap();
-        let custom_layout = Layout::Custom(custom_layout);
-        let final_layout = custom_layout.finalize(&monitors).unwrap();
-
-        println!("{:#?}", final_layout);
-        assert_eq!(final_layout, FinalLayout::default());
+        if let WindowInfo::Primary {
+            monitor,
+            window_x,
+            window_y,
+            window_width,
+            window_height,
+            ..
+        } = &layout.windows[0]
+        {
+            assert_eq!(monitor, "STRETCH");
+            assert_eq!(*window_x, 0);
+            assert_eq!(*window_y, 0);
+            assert_eq!(*window_width, 5920);
+            assert_eq!(*window_height, 2680);
+        } else {
+            panic!("Expected primary window for stretch mode");
+        }
     }
 }
