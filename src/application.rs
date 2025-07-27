@@ -26,8 +26,8 @@ use log::info;
 
 use crate::{
     layout::{convert_to_window_layout, LiveWallpaperConfig, WallpaperSource, WindowInfo},
-    model::LaunchMode,
-    monitor::{MonitorListModelExt as _, MonitorTracker},
+    model::{LaunchMode, MonitorListModelExt as _},
+    monitor_tracker::MonitorTracker,
     widget::{Renderer, RendererWidget},
     window::{HotaruApplicationWindow, Position},
 };

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::monitor::{MonitorInfo, MonitorMap};
+use crate::model::{MonitorInfo, MonitorMap};
 
 // Live Wallpaper Config
 
