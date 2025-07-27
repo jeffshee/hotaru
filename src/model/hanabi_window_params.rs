@@ -2,24 +2,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::constant::HANABI_APPLICATION_ID;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HanabiWindowParams {
     pub position: [i32; 2],
     pub keep_at_bottom: bool,
     pub keep_minimized: bool,
     pub keep_position: bool,
-}
-
-impl Default for HanabiWindowParams {
-    fn default() -> Self {
-        HanabiWindowParams {
-            position: [0, 0],
-            keep_at_bottom: false,
-            keep_minimized: false,
-            keep_position: false,
-        }
-    }
 }
 
 impl HanabiWindowParams {

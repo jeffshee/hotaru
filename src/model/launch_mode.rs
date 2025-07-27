@@ -6,12 +6,13 @@ use crate::constant::{
     LAUNCH_MODE_X11_DESKTOP,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString, Display)]
 #[strum(serialize_all = "kebab_case")]
 pub enum LaunchMode {
     X11Desktop,
     WaylandLayerShell,
     GnomeExtHanabi,
+    #[default]
     Windowed,
 }
 
@@ -23,12 +24,6 @@ impl From<LaunchMode> for Value {
             LaunchMode::GnomeExtHanabi => Value::from(LAUNCH_MODE_GNOME_EXT_HANABI),
             LaunchMode::Windowed => Value::from(LAUNCH_MODE_WINDOWED),
         }
-    }
-}
-
-impl Default for LaunchMode {
-    fn default() -> Self {
-        LaunchMode::Windowed
     }
 }
 

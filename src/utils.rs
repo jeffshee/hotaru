@@ -18,7 +18,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-use gst::prelude::{GstObjectExt, PluginFeatureExtManual};
+use gst::prelude::*;
 use log::debug;
 
 pub fn setup_gst(is_enable_va: bool, is_enable_nvsl: bool) {

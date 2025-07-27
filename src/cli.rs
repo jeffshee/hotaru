@@ -2,7 +2,7 @@ use std::{env, path::PathBuf};
 
 use clap::{ArgAction, Parser};
 
-use hotaru::model::LaunchMode;
+use hotaru::prelude::*;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
@@ -41,7 +41,7 @@ impl Cli {
         if self.use_clapper {
             true
         } else {
-            env::var("USE_CLAPPER").map_or(false, |v| v == "true")
+            env::var("USE_CLAPPER").is_ok_and(|v| v == "true")
         }
     }
 
@@ -49,7 +49,7 @@ impl Cli {
         if self.enable_va {
             true
         } else {
-            env::var("ENABLE_VA").map_or(false, |v| v == "true")
+            env::var("ENABLE_VA").is_ok_and(|v| v == "true")
         }
     }
 
@@ -57,7 +57,7 @@ impl Cli {
         if self.enable_nvsl {
             true
         } else {
-            env::var("ENABLE_NVSL").map_or(false, |v| v == "true")
+            env::var("ENABLE_NVSL").is_ok_and(|v| v == "true")
         }
     }
 }

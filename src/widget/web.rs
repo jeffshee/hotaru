@@ -77,7 +77,7 @@ mod imp {
     use glib::Properties;
     use gtk::subclass::prelude::*;
     use log::debug;
-    use webkit::{prelude::WebViewExt, WebView};
+    use webkit::{prelude::*, WebView};
 
     #[derive(Properties, Default)]
     #[properties(wrapper_type = super::WebWidget)]

@@ -92,6 +92,12 @@ impl MonitorTracker {
     }
 }
 
+impl Default for MonitorTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 mod imp {
     use super::*;
 

@@ -8,13 +8,7 @@ use gtk::{
 };
 use log::{debug, info};
 
-use hotaru::{
-    application::HotaruApplication,
-    constant::APPLICATION_ID,
-    gst_utils,
-    layout::LiveWallpaperConfig,
-    monitor::{MonitorListModelExt as _, MonitorTracker},
-};
+use hotaru::prelude::*;
 
 use crate::cli::Cli;
 
@@ -34,7 +28,7 @@ fn main() -> anyhow::Result<()> {
 
     gst::init().unwrap();
     gtk::init().unwrap();
-    gst_utils::setup_gst(is_enable_va, is_enable_nvsl);
+    setup_gst(is_enable_va, is_enable_nvsl);
 
     let app = HotaruApplication::new(
         APPLICATION_ID,

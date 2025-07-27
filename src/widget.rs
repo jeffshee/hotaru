@@ -6,9 +6,10 @@ use enum_dispatch::enum_dispatch;
 use gtk::Widget;
 
 use crate::layout::WallpaperType;
-pub use clapper::*;
-pub use gstgtk4::*;
-pub use web::*;
+
+pub use clapper::ClapperWidget;
+pub use gstgtk4::GstGtk4Widget;
+pub use web::WebWidget;
 
 pub trait RendererWidgetBuilder {
     fn with_filepath(filepath: &str) -> Self;

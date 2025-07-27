@@ -59,7 +59,7 @@ impl HotaruApplication {
             .unwrap();
         info!("Monitor map: {:#?}", monitor_map);
 
-        let layout = convert_to_window_layout(&config, &monitor_map);
+        let layout = convert_to_window_layout(config, &monitor_map);
         info!("Window layout: {:#?}", layout);
         let mut primary_widgets = HashMap::new();
 
@@ -81,7 +81,7 @@ impl HotaruApplication {
                     y: *window_y,
                 });
                 window.set_size_request(*window_width, *window_height);
-                window.set_title(Some(&window_title));
+                window.set_title(Some(window_title));
                 let renderer = match wallpaper_source {
                     WallpaperSource::Filepath { filepath } => {
                         Renderer::with_filepath(filepath, wallpaper_type, use_clapper)
@@ -114,7 +114,7 @@ impl HotaruApplication {
                     y: *window_y,
                 });
                 window.set_size_request(*window_width, *window_height);
-                window.set_title(Some(&window_title));
+                window.set_title(Some(window_title));
                 if let Some(primary_widget) = primary_widgets.get(clone_source) {
                     let widget = primary_widget.mirror();
                     window.set_child(Some(&widget));

@@ -110,9 +110,9 @@ pub fn convert_to_window_layout(
     monitor_map: &MonitorMap,
 ) -> WindowLayout {
     match config.mode {
-        WallpaperMode::WallpaperPerMonitor => handle_per_monitor(config, &monitor_map),
-        WallpaperMode::CloneSingleWallpaper => handle_clone(config, &monitor_map),
-        WallpaperMode::StretchSingleWallpaper => handle_stretch(config, &monitor_map),
+        WallpaperMode::WallpaperPerMonitor => handle_per_monitor(config, monitor_map),
+        WallpaperMode::CloneSingleWallpaper => handle_clone(config, monitor_map),
+        WallpaperMode::StretchSingleWallpaper => handle_stretch(config, monitor_map),
     }
 }
 
