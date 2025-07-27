@@ -18,9 +18,19 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+use std::{collections::HashMap, str::FromStr as _};
+
 use glib::Object;
-use gtk::prelude::*;
-use gtk::{gio, glib};
+use gtk::{gio, glib, prelude::*};
+use log::info;
+
+use crate::{
+    layout::{convert_to_window_layout, LiveWallpaperConfig, WallpaperSource, WindowInfo},
+    model::LaunchMode,
+    monitor::{MonitorListModelExt as _, MonitorTracker},
+    widget::{Renderer, RendererWidget},
+    window::{HotaruApplicationWindow, Position},
+};
 
 glib::wrapper! {
     pub struct HotaruApplication(ObjectSubclass<imp::HotaruApplication>)
@@ -29,33 +39,114 @@ glib::wrapper! {
 }
 
 impl HotaruApplication {
-    pub fn new(application_id: &str, flags: &gio::ApplicationFlags) -> Self {
+    pub fn new(
+        application_id: &str,
+        flags: &gio::ApplicationFlags,
+        launch_mode: LaunchMode,
+    ) -> Self {
         Object::builder()
             .property("application_id", application_id)
             .property("flags", flags)
+            .property("launch_mode", launch_mode)
             .build()
+    }
+
+    pub fn build_ui(&self, config: &LiveWallpaperConfig, use_clapper: bool) {
+        let launch_mode = LaunchMode::from_str(&self.launch_mode()).unwrap();
+        let monitor_map = MonitorTracker::monitors()
+            .unwrap()
+            .try_to_monitor_map()
+            .unwrap();
+        info!("Monitor map: {:#?}", monitor_map);
+
+        let layout = convert_to_window_layout(&config, &monitor_map);
+        info!("Window layout: {:#?}", layout);
+        let mut primary_widgets = HashMap::new();
+
+        layout.windows.iter().for_each(|window_info| {
+            if let WindowInfo::Primary {
+                monitor,
+                window_x,
+                window_y,
+                window_width,
+                window_height,
+                window_title,
+                wallpaper_type,
+                wallpaper_source,
+            } = window_info
+            {
+                let window = HotaruApplicationWindow::new(self, launch_mode);
+                window.set_position(Position {
+                    x: *window_x,
+                    y: *window_y,
+                });
+                window.set_size_request(*window_width, *window_height);
+                window.set_title(Some(&window_title));
+                let renderer = match wallpaper_source {
+                    WallpaperSource::Filepath { filepath } => {
+                        Renderer::with_filepath(filepath, wallpaper_type, use_clapper)
+                    }
+                    WallpaperSource::Uri { uri } => {
+                        Renderer::with_uri(uri, wallpaper_type, use_clapper)
+                    }
+                };
+                window.set_child(Some(renderer.widget()));
+                window.present();
+                renderer.play();
+                primary_widgets.insert(monitor.to_string(), renderer);
+            }
+        });
+
+        layout.windows.iter().for_each(|window_info| {
+            if let WindowInfo::Clone {
+                monitor: _,
+                window_x,
+                window_y,
+                window_width,
+                window_height,
+                window_title,
+                clone_source,
+            } = window_info
+            {
+                let window = HotaruApplicationWindow::new(self, launch_mode);
+                window.set_position(Position {
+                    x: *window_x,
+                    y: *window_y,
+                });
+                window.set_size_request(*window_width, *window_height);
+                window.set_title(Some(&window_title));
+                if let Some(primary_widget) = primary_widgets.get(clone_source) {
+                    let widget = primary_widget.mirror();
+                    window.set_child(Some(&widget));
+                }
+                window.present();
+            }
+        });
     }
 }
 
 mod imp {
     use super::*;
-    use std::cell::Cell;
-    use std::env;
-    use std::process::{exit, Command};
 
-    use gtk::gdk::Display;
-    use gtk::glib::{self, Char, Properties, Type};
-    use gtk::subclass::prelude::*;
+    use std::{
+        cell::RefCell,
+        env,
+        process::{exit, Command},
+    };
+
+    use gtk::{
+        gdk::Display,
+        glib::{self, Properties, Type},
+        subclass::prelude::*,
+    };
+
+    use crate::constant::LAUNCH_MODE_X11_DESKTOP;
 
     #[derive(Properties, Default)]
     #[properties(wrapper_type = super::HotaruApplication)]
     pub struct HotaruApplication {
-        #[property(get, set)]
-        use_x11_desktop: Cell<bool>,
-        #[property(get, set)]
-        use_wayland_layer_shell: Cell<bool>,
-        #[property(get, set)]
-        use_gnome_hanabi_ext: Cell<bool>,
+        #[property(get, construct_only)]
+        launch_mode: RefCell<String>,
     }
 
     #[glib::object_subclass]
@@ -70,67 +161,17 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
-            let app = self.obj();
-            app.add_main_option(
-                "x11-desktop",
-                Char::try_from('x').unwrap(),
-                glib::OptionFlags::NONE,
-                glib::OptionArg::None,
-                "Use X11 Extended Window Manager Hints",
-                None,
-            );
-            app.add_main_option(
-                "wayland-layer-shell",
-                Char::try_from('w').unwrap(),
-                glib::OptionFlags::NONE,
-                glib::OptionArg::None,
-                "Use Wayland Layer Shell Protocol",
-                None,
-            );
-            app.add_main_option(
-                "gnome-hanabi-ext",
-                Char::try_from('g').unwrap(),
-                glib::OptionFlags::NONE,
-                glib::OptionArg::None,
-                "Use Gnome Hanabi Extension",
-                None,
-            );
+            let obj = self.obj();
+            if obj.launch_mode() == LAUNCH_MODE_X11_DESKTOP {
+                fallback_to_xwayland();
+            }
         }
     }
 
     impl ApplicationImpl for HotaruApplication {
-        fn command_line(&self, command_line: &gtk::gio::ApplicationCommandLine) -> glib::ExitCode {
-            let options = command_line.options_dict();
-
-            let use_x11_desktop = options.contains("x11-desktop");
-            let use_wayland_layer_shell = options.contains("wayland-layer-shell");
-            let use_gnome_hanabi_ext = options.contains("gnome-hanabi-ext");
-
-            if (use_x11_desktop as u8 + use_wayland_layer_shell as u8 + use_gnome_hanabi_ext as u8)
-                > 1
-            {
-                eprintln!("Specify only one launch mode: `--x11-desktop`, `--wayland-layer-shell` or `--gnome-hanabi-ext`");
-                return glib::ExitCode::from(1);
-            }
-
+        fn command_line(&self, _command_line: &gio::ApplicationCommandLine) -> glib::ExitCode {
+            // Just activate the application, we already handled the cli arguments with clap
             let app = self.obj();
-            app.set_use_x11_desktop(use_x11_desktop);
-            app.set_use_wayland_layer_shell(use_wayland_layer_shell);
-            app.set_use_gnome_hanabi_ext(use_gnome_hanabi_ext);
-
-            if use_x11_desktop {
-                println!("Using X11 Extended Window Manager Hints");
-                check_x11();
-            } else if use_wayland_layer_shell {
-                println!("Using Wayland Layer Shell Protocol");
-                panic!("Not implemented yet");
-            } else if use_gnome_hanabi_ext {
-                println!("Using Gnome Hanabi Extension");
-                panic!("Not implemented yet");
-            } else {
-                println!("Using Standalone Mode");
-            }
-
             app.activate();
             glib::ExitCode::from(0)
         }
@@ -138,7 +179,7 @@ mod imp {
 
     impl GtkApplicationImpl for HotaruApplication {}
 
-    fn check_x11() {
+    fn fallback_to_xwayland() {
         let display = Display::default().expect("Failed to get default display");
         let is_x11 = display
             .type_()

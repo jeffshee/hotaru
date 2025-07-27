@@ -4,16 +4,11 @@ mod web;
 
 use enum_dispatch::enum_dispatch;
 use gtk::Widget;
-use once_cell::sync::Lazy;
-use std::env;
 
 use crate::layout::WallpaperType;
 pub use clapper::*;
 pub use gstgtk4::*;
 pub use web::*;
-
-static VIDEO_USE_CLAPPER: Lazy<bool> =
-    Lazy::new(|| env::var("VIDEO_USE_CLAPPER").unwrap_or_else(|_| "1".to_string()) == "1");
 
 pub trait RendererWidgetBuilder {
     fn with_filepath(filepath: &str) -> Self;
@@ -41,10 +36,10 @@ pub enum Renderer {
 }
 
 impl Renderer {
-    pub fn with_filepath(filepath: &str, wallpaper_type: &WallpaperType) -> Self {
+    pub fn with_filepath(filepath: &str, wallpaper_type: &WallpaperType, use_clapper: bool) -> Self {
         match wallpaper_type {
             WallpaperType::Video => {
-                if *VIDEO_USE_CLAPPER {
+                if use_clapper {
                     Self::Clapper(ClapperWidget::with_filepath(filepath))
                 } else {
                     Self::GstGtk4(GstGtk4Widget::with_filepath(filepath))
@@ -54,10 +49,10 @@ impl Renderer {
         }
     }
 
-    pub fn with_uri(uri: &str, wallpaper_type: &WallpaperType) -> Self {
+    pub fn with_uri(uri: &str, wallpaper_type: &WallpaperType, use_clapper: bool) -> Self {
         match wallpaper_type {
             WallpaperType::Video => {
-                if *VIDEO_USE_CLAPPER {
+                if use_clapper {
                     Self::Clapper(ClapperWidget::with_uri(uri))
                 } else {
                     Self::GstGtk4(GstGtk4Widget::with_uri(uri))

@@ -1,0 +1,13 @@
+{
+    "mode": "clone_single_wallpaper",
+    "monitors": [
+        {
+            "monitor": "DP-5",
+            "wallpaper_type": "video",
+            "filepath": "./test2.webm"
+        },
+        {
+            "monitor": "DP-4"
+        }
+    ]
+}

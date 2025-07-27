@@ -19,18 +19,40 @@
  */
 
 use gst::prelude::{GstObjectExt, PluginFeatureExtManual};
+use log::debug;
 
-// TODO
-static IS_ENABLE_VA: bool = true;
-static IS_ENABLE_NVSL: bool = true;
-
-pub fn setup_gst() {
+pub fn setup_gst(is_enable_va: bool, is_enable_nvsl: bool) {
     // Software libav decoders have "primary" rank, set Nvidia higher to use NVDEC hardware acceleration.
-    set_plugin_decoder_rank("nvcodec", gst::Rank::PRIMARY + 1);
+    set_plugin_decoder_rank_nvcodec(gst::Rank::PRIMARY + 1, is_enable_nvsl);
 
     // Legacy "vaapidecodebin" have rank "primary + 2", we need to set VA higher then that to be used.
-    if IS_ENABLE_VA {
+    if is_enable_va {
         set_plugin_decoder_rank("va", gst::Rank::PRIMARY + 3);
+    }
+}
+
+fn set_plugin_decoder_rank_nvcodec(new_rank: gst::Rank, is_enable_nvsl: bool) {
+    let registry = gst::Registry::get();
+    let features = registry.features_by_plugin("nvcodec");
+    for feature in features {
+        let feature_name = feature.name();
+        if !feature_name.ends_with("dec") && !feature_name.ends_with("postproc") {
+            continue;
+        }
+
+        let is_stateless = feature_name.ends_with("sldec");
+        if is_stateless != is_enable_nvsl {
+            continue;
+        }
+
+        let old_rank = feature.rank();
+        if old_rank != new_rank {
+            feature.set_rank(new_rank);
+        }
+        debug!(
+            "changed rank: {} -> {} for {}",
+            old_rank, new_rank, feature_name
+        );
     }
 }
 
@@ -43,20 +65,13 @@ fn set_plugin_decoder_rank(plugin_name: &str, new_rank: gst::Rank) {
             continue;
         }
 
-        if plugin_name == "nvcodec" {
-            let is_stateless = feature_name.ends_with("sldec");
-            if is_stateless != IS_ENABLE_NVSL {
-                continue;
-            }
-        }
-
         let old_rank = feature.rank();
         if old_rank != new_rank {
             feature.set_rank(new_rank);
-            println!(
-                "changed rank: {} -> {} for {}",
-                old_rank, new_rank, feature_name
-            );
         }
+        debug!(
+            "changed rank: {} -> {} for {}",
+            old_rank, new_rank, feature_name
+        );
     }
 }

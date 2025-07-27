@@ -94,9 +94,12 @@ impl MonitorTracker {
 
 mod imp {
     use super::*;
+
+    use std::sync::OnceLock;
+
     use glib::subclass::Signal;
     use gtk::subclass::prelude::*;
-    use std::sync::OnceLock;
+    use log::debug;
 
     #[derive(Default)]
     pub struct MonitorTracker;
@@ -123,7 +126,7 @@ mod imp {
                         list,
                         move || {
                             let monitors: Vec<Monitor> = list.try_to_monitor_vec().unwrap();
-                            println!("Monitor changed: {:?}", monitors);
+                            debug!("monitor changed: {:?}", monitors);
                             obj.emit_by_name("monitor-changed", &[&list])
                         }
                     ));

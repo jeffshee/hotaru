@@ -6,7 +6,7 @@ use crate::monitor::{MonitorInfo, MonitorMap};
 
 // Live Wallpaper Config
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LiveWallpaperConfig {
     pub mode: WallpaperMode,
     pub monitors: Vec<MonitorConfig>,
@@ -20,7 +20,7 @@ pub enum WallpaperMode {
     StretchSingleWallpaper,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum MonitorConfig {
     Primary {
@@ -81,8 +81,10 @@ pub enum WindowInfo {
         clone_source: String,
     },
 }
-// SourceConfig keyed by wallpaper_source
 
+// TODO: Implementation
+// SourceConfig keyed by wallpaper_source
+#[allow(dead_code)]
 type SourceConfigMap = HashMap<String, SourceConfig>;
 
 #[derive(Serialize, Deserialize, Debug)]

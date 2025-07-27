@@ -19,8 +19,7 @@
  */
 
 use glib::Object;
-use gtk::prelude::*;
-use gtk::{gio, glib};
+use gtk::{gio, glib, prelude::*};
 
 use super::{RendererWidget, RendererWidgetBuilder};
 
@@ -72,9 +71,12 @@ impl RendererWidget for WebWidget {
 
 mod imp {
     use super::*;
+
+    use std::cell::RefCell;
+
     use glib::Properties;
     use gtk::subclass::prelude::*;
-    use std::cell::RefCell;
+    use log::debug;
     use webkit::{prelude::WebViewExt, WebView};
 
     #[derive(Properties, Default)]
@@ -88,7 +90,7 @@ mod imp {
 
     impl WebWidget {
         pub fn start(&self) {
-            println!("start {}", self.uri.borrow());
+            debug!("start {}", self.uri.borrow());
             self.webview.borrow().load_uri(&self.uri.borrow());
         }
     }

@@ -31,5 +31,4 @@ src/config.rs
 io.github.jeffshee.Hotaru.flatpak
 
 # Test files
-test.gif
-test.webm
+test*.*

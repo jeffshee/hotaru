@@ -1,0 +1,15 @@
+{
+    "mode": "wallpaper_per_monitor",
+    "monitors": [
+        {
+            "monitor": "DP-5",
+            "wallpaper_type": "video",
+            "filepath": "./test.webm"
+        },
+        {
+            "monitor": "DP-4",
+            "wallpaper_type": "web",
+            "uri": "https://jeffshee.github.io/herta-wallpaper/"
+        }
+    ]
+}

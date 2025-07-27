@@ -19,35 +19,19 @@
  */
 use gdk_x11::X11Surface;
 use glib::Object;
-use gtk::prelude::*;
-use gtk::{gio, glib};
-use json::{self, object};
-use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{AtomEnum, ConfigureWindowAux, ConnectionExt, PropMode};
-use x11rb::wrapper::ConnectionExt as _;
+use gtk::{gio, glib, prelude::*};
+use log::{debug, error};
+use x11rb::{
+    connection::Connection,
+    protocol::xproto::{AtomEnum, ConfigureWindowAux, ConnectionExt, PropMode},
+    wrapper::ConnectionExt as _,
+};
 
-use crate::application::HotaruApplication;
-
-const WINDOW_TITLE: &str = "Hotaru Renderer";
-const HANABI_APPLICATION_ID: &str = "io.github.jeffshee.HanabiRenderer";
-
-pub enum WindowType {
-    X11Desktop,
-    WaylandLayerShell,
-    GnomeExtHanabi,
-    Standalone,
-}
-
-impl From<&WindowType> for glib::Value {
-    fn from(value: &WindowType) -> Self {
-        match value {
-            WindowType::X11Desktop => glib::Value::from("x11-desktop"),
-            WindowType::WaylandLayerShell => glib::Value::from("wayland-layer-shell"),
-            WindowType::GnomeExtHanabi => glib::Value::from("gnome-ext-hanabi"),
-            WindowType::Standalone => glib::Value::from("standalone"),
-        }
-    }
-}
+use crate::{
+    application::HotaruApplication,
+    constant::WINDOW_TITLE,
+    model::{HanabiWindowParams, LaunchMode},
+};
 
 glib::wrapper! {
     pub struct HotaruApplicationWindow(ObjectSubclass<imp::HotaruApplicationWindow>)
@@ -56,28 +40,28 @@ glib::wrapper! {
 }
 
 impl HotaruApplicationWindow {
-    pub fn new(app: &HotaruApplication, window_type: &WindowType) -> Self {
+    pub fn new(app: &HotaruApplication, launch_mode: LaunchMode) -> Self {
         Object::builder()
             .property("application", app)
-            .property("window_type", window_type)
+            .property("launch_mode", launch_mode)
             .property("title", Some(WINDOW_TITLE))
             .property("decorated", false)
             .build()
     }
 
     fn set_x11_window_position(&self, x: i32, y: i32) {
-        println!("set_x11_window_position: {x}, {y}");
+        debug!("set_x11_window_position: {x}, {y}");
         if let Some(surface) = self.surface() {
             if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
                 let xid = x11_surface.xid();
-                println!("xid: {xid}");
+                debug!("xid: {xid}");
                 let (conn, _screen_num) = x11rb::connect(None).unwrap();
                 let position = ConfigureWindowAux::new().x(x).y(y);
 
                 let operation = move || {
                     conn.configure_window(xid as u32, &position)
                         .and_then(|_| conn.flush())
-                        .unwrap_or_else(|e| eprintln!("Failed to position window: {}", e));
+                        .unwrap_or_else(|e| error!("Failed to position window: {}", e));
                 };
                 if self.is_mapped() {
                     operation();
@@ -86,19 +70,19 @@ impl HotaruApplicationWindow {
                     operation();
                 });
             } else {
-                eprintln!("Failed to downcast Surface to X11Surface");
+                error!("Failed to downcast Surface to X11Surface");
             }
         } else {
-            eprintln!("Failed to get Surface");
+            error!("Failed to get Surface");
         }
     }
 
     fn set_x11_window_type_hint(&self) {
-        println!("set_x11_window_type_hint");
+        debug!("set_x11_window_type_hint");
         if let Some(surface) = self.surface() {
             if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
                 let xid = x11_surface.xid();
-                println!("xid: {xid}");
+                debug!("xid: {xid}");
                 let (conn, _screen_num) = x11rb::connect(None).unwrap();
                 let net_wm_window_type = conn
                     .intern_atom(false, b"_NET_WM_WINDOW_TYPE")
@@ -122,7 +106,7 @@ impl HotaruApplicationWindow {
                         &[net_wm_window_type_desktop],
                     )
                     .and_then(|_| conn.flush())
-                    .unwrap_or_else(|e| eprintln!("Failed to set window type hint: {}", e));
+                    .unwrap_or_else(|e| error!("Failed to set window type hint: {}", e));
                 };
                 if self.is_mapped() {
                     operation();
@@ -131,27 +115,22 @@ impl HotaruApplicationWindow {
                     operation();
                 });
             } else {
-                eprintln!("Failed to downcast Surface to X11Surface");
+                error!("Failed to downcast Surface to X11Surface");
             }
         } else {
-            eprintln!("Failed to get Surface");
+            error!("Failed to get Surface");
         }
     }
 
     fn set_hanabi_window_title(&self) {
-        // TODO: improve this
         let position = self.position();
-        let state = object! {
+        let params = HanabiWindowParams {
             position: [position.x, position.y],
-            keepAtBottom: true,
-            keepMinimized: true,
-            keepPosition: true,
+            keep_at_bottom: true,
+            keep_minimized: true,
+            keep_position: true,
         };
-        let state_json = json::stringify(state);
-
-        let title = format!("@{HANABI_APPLICATION_ID}!{state_json}");
-        println!("title: {title}");
-        self.set_title(Some(title.as_str()));
+        self.set_title(Some(&params.hanabi_window_title()));
     }
 }
 
@@ -163,6 +142,11 @@ pub struct Position {
 }
 
 mod imp {
+    use crate::constant::{
+        LAUNCH_MODE_GNOME_EXT_HANABI, LAUNCH_MODE_WAYLAND_LAYER_SHELL, LAUNCH_MODE_WINDOWED,
+        LAUNCH_MODE_X11_DESKTOP,
+    };
+
     use super::*;
     use glib::Properties;
     use gtk::{
@@ -175,7 +159,7 @@ mod imp {
     #[properties(wrapper_type = super::HotaruApplicationWindow)]
     pub struct HotaruApplicationWindow {
         #[property(get, construct_only)]
-        window_type: RefCell<String>,
+        launch_mode: RefCell<String>,
         #[property(get, set)]
         position: RefCell<Position>,
     }
@@ -205,32 +189,32 @@ mod imp {
             );
             obj.set_css_classes(&["black-bg"]);
 
-            let window_type = obj.window_type();
-            println!("window_type: {window_type}");
-            match window_type.as_str() {
-                "x11-desktop" => {
+            match obj.launch_mode().as_str() {
+                LAUNCH_MODE_X11_DESKTOP => {
                     obj.connect_realize(move |window| {
                         window.set_x11_window_type_hint();
                         let position = window.position();
                         window.set_x11_window_position(position.x, position.y);
                     });
                 }
-                "wayland-layer-shell" => {
+                LAUNCH_MODE_WAYLAND_LAYER_SHELL => {
                     todo!()
                 }
-                "gnome-ext-hanabi" => {
+                LAUNCH_MODE_GNOME_EXT_HANABI => {
                     obj.connect_realize(move |window| {
                         window.set_hanabi_window_title();
                     });
                 }
-                "standalone" => {
+                LAUNCH_MODE_WINDOWED => {
                     obj.set_default_size(1920, 1080);
 
                     obj.connect_realize(move |window| {
                         window.set_decorated(true);
                     });
                 }
-                _ => {}
+                launch_mode => {
+                    error!("Unknown launch mode: {}", launch_mode);
+                }
             }
         }
     }
@@ -238,29 +222,31 @@ mod imp {
     impl WidgetImpl for HotaruApplicationWindow {
         fn realize(&self) {
             self.parent_realize();
-            println!("realize");
+            debug!("realize");
             let obj = self.obj();
 
             // Handle position changes after window realization
             obj.connect_position_notify(move |window| {
-                println!("position_notify");
+                debug!("position_notify");
                 let position = window.position();
 
-                match window.window_type().as_str() {
-                    "x11-desktop" => {
+                match window.launch_mode().as_str() {
+                    LAUNCH_MODE_X11_DESKTOP => {
                         window.set_x11_window_position(position.x, position.y);
                     }
-                    "gnome-ext-hanabi" => {
+                    LAUNCH_MODE_GNOME_EXT_HANABI => {
                         window.set_hanabi_window_title();
                     }
-                    _ => {}
+                    launch_mode => {
+                        error!("Unknown launch mode: {}", launch_mode);
+                    }
                 }
             });
         }
 
         fn map(&self) {
             self.parent_map();
-            println!("map");
+            debug!("map");
         }
     }
 

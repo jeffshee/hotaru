@@ -19,8 +19,7 @@
  */
 
 use glib::Object;
-use gtk::prelude::*;
-use gtk::{gio, glib};
+use gtk::{gio, glib, prelude::*};
 
 use super::{RendererWidget, RendererWidgetBuilder};
 
@@ -50,6 +49,9 @@ impl RendererWidget for ClapperWidget {
             .hexpand(true)
             .vexpand(true)
             .build();
+        // TODO: Make it configurable
+        picture.set_content_fit(gtk::ContentFit::Cover);
+
         #[cfg(feature = "gtk_v4_14")]
         {
             let offload = gtk::GraphicsOffload::new(Some(&picture));
@@ -78,9 +80,12 @@ impl RendererWidget for ClapperWidget {
 
 mod imp {
     use super::*;
+
+    use std::cell::RefCell;
+
     use glib::Properties;
     use gtk::{gdk, subclass::prelude::*};
-    use std::cell::RefCell;
+    use log::{debug, error, warn};
 
     #[derive(Properties, Default)]
     #[properties(wrapper_type = super::ClapperWidget)]
@@ -133,6 +138,8 @@ mod imp {
             let paintable = picture.paintable().unwrap();
             picture.set_hexpand(true);
             picture.set_vexpand(true);
+            // TODO: Make it configurable
+            picture.set_content_fit(gtk::ContentFit::Cover);
 
             obj.append(&picture);
 
@@ -145,15 +152,15 @@ mod imp {
             });
 
             adapter.connect_state_changed(move |_adapter, playstate| {
-                println!("{}", playstate);
+                debug!("{}", playstate);
             });
 
             adapter.connect_warning(move |_adapter, error, _structure| {
-                eprintln!("{}", error);
+                warn!("{}", error);
             });
 
             adapter.connect_error(move |_adapter, error, _structure| {
-                eprintln!("{}", error);
+                error!("{}", error);
             });
 
             self.sink.replace(Some(sink));

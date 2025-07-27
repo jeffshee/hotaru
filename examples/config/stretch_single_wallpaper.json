@@ -1,0 +1,10 @@
+{
+    "mode": "stretch_single_wallpaper",
+    "monitors": [
+        {
+            "monitor": "STRETCH",
+            "wallpaper_type": "video",
+            "filepath": "./test2.webm"
+        }
+    ]
+}
