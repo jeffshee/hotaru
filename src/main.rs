@@ -24,7 +24,8 @@ fn main() -> anyhow::Result<()> {
     let is_enable_nvsl = cli.is_enable_nvsl();
     let is_use_clapper = cli.is_use_clapper();
 
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&cli.log_level)).init();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&cli.log_level))
+        .init();
     info!("Hotaru started with args: {:#?}", cli);
 
     let json = std::fs::read_to_string(cli.config_file.clone())?;

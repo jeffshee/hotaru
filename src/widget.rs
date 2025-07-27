@@ -36,7 +36,11 @@ pub enum Renderer {
 }
 
 impl Renderer {
-    pub fn with_filepath(filepath: &str, wallpaper_type: &WallpaperType, use_clapper: bool) -> Self {
+    pub fn with_filepath(
+        filepath: &str,
+        wallpaper_type: &WallpaperType,
+        use_clapper: bool,
+    ) -> Self {
         match wallpaper_type {
             WallpaperType::Video => {
                 if use_clapper {

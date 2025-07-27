@@ -28,17 +28,11 @@ pub struct Cli {
     use_clapper: bool,
 
     /// Enable VA decoders for improved performance on Intel/AMD Wayland setups
-    #[arg(
-        long,
-        default_value_t = false,
-    )]
+    #[arg(long, default_value_t = false)]
     enable_va: bool,
 
     /// Enable stateless NVIDIA decoders
-    #[arg(
-        long,
-        default_value_t = false,
-    )]
+    #[arg(long, default_value_t = false)]
     enable_nvsl: bool,
 }
 
