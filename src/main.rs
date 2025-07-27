@@ -23,8 +23,8 @@ fn main() -> anyhow::Result<()> {
     info!("Hotaru started with args: {:#?}", cli);
 
     let json = std::fs::read_to_string(cli.config_file.clone())?;
-    let config: LiveWallpaperConfig = serde_json::from_str(&json)?;
-    info!("Live wallpaper config loaded: {:#?}", config);
+    let config: WallpaperConfig = serde_json::from_str(&json)?;
+    info!("Wallpaper config loaded: {:#?}", config);
 
     gst::init().unwrap();
     gtk::init().unwrap();

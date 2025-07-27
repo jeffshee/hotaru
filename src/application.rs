@@ -25,8 +25,10 @@ use gtk::{gio, glib, prelude::*};
 use log::info;
 
 use crate::{
-    layout::{convert_to_window_layout, LiveWallpaperConfig, WallpaperSource, WindowInfo},
-    model::{LaunchMode, MonitorListModelExt as _},
+    model::{
+        LaunchMode, MonitorListModelExt as _, WallpaperConfig, WallpaperSource, WindowInfo,
+        WindowLayout,
+    },
     monitor_tracker::MonitorTracker,
     widget::{Renderer, RendererWidget},
     window::{HotaruApplicationWindow, Position},
@@ -51,7 +53,7 @@ impl HotaruApplication {
             .build()
     }
 
-    pub fn build_ui(&self, config: &LiveWallpaperConfig, use_clapper: bool) {
+    pub fn build_ui(&self, config: &WallpaperConfig, use_clapper: bool) {
         let launch_mode = LaunchMode::from_str(&self.launch_mode()).unwrap();
         let monitor_map = MonitorTracker::monitors()
             .unwrap()
@@ -59,7 +61,7 @@ impl HotaruApplication {
             .unwrap();
         info!("Monitor map: {:#?}", monitor_map);
 
-        let layout = convert_to_window_layout(config, &monitor_map);
+        let layout = WindowLayout::new(config, &monitor_map);
         info!("Window layout: {:#?}", layout);
         let mut primary_widgets = HashMap::new();
 

@@ -5,7 +5,7 @@ mod web;
 use enum_dispatch::enum_dispatch;
 use gtk::Widget;
 
-use crate::layout::WallpaperType;
+use crate::model::WallpaperType;
 
 pub use clapper::ClapperWidget;
 pub use gstgtk4::GstGtk4Widget;

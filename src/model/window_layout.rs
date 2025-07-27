@@ -1,64 +1,16 @@
-use std::collections::HashMap;
-
 use serde::{Deserialize, Serialize};
 
-use crate::model::{MonitorInfo, MonitorMap};
+use crate::model::{
+    MonitorConfig, MonitorInfo, MonitorMap, WallpaperConfig, WallpaperMode, WallpaperSource,
+    WallpaperType,
+};
 
-// Live Wallpaper Config
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LiveWallpaperConfig {
-    pub mode: WallpaperMode,
-    pub monitors: Vec<MonitorConfig>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub enum WallpaperMode {
-    WallpaperPerMonitor,
-    CloneSingleWallpaper,
-    StretchSingleWallpaper,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(untagged)]
-pub enum MonitorConfig {
-    Primary {
-        monitor: String,
-        wallpaper_type: WallpaperType,
-        #[serde(flatten)]
-        wallpaper_source: WallpaperSource,
-    },
-    Clone {
-        monitor: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        clone_source: Option<String>,
-    },
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(untagged)]
-#[serde(rename_all = "snake_case")]
-pub enum WallpaperSource {
-    Filepath { filepath: String },
-    Uri { uri: String },
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub enum WallpaperType {
-    Video,
-    Web,
-}
-
-// Window Layout
-
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WindowLayout {
     pub windows: Vec<WindowInfo>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum WindowInfo {
     Primary {
@@ -82,49 +34,64 @@ pub enum WindowInfo {
     },
 }
 
-// TODO: Implementation
-// SourceConfig keyed by wallpaper_source
-#[allow(dead_code)]
-type SourceConfigMap = HashMap<String, SourceConfig>;
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SourceConfig {
-    pub is_mute: bool,
-    pub audio_volume: f32,
-    pub content_fit: ContentFit,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum ContentFit {
-    Fill,
-    Contain,
-    Cover,
-    ScaleDown,
-}
-
-// Conversion
-
-pub fn convert_to_window_layout(
-    config: &LiveWallpaperConfig,
-    monitor_map: &MonitorMap,
-) -> WindowLayout {
-    match config.mode {
-        WallpaperMode::WallpaperPerMonitor => handle_per_monitor(config, monitor_map),
-        WallpaperMode::CloneSingleWallpaper => handle_clone(config, monitor_map),
-        WallpaperMode::StretchSingleWallpaper => handle_stretch(config, monitor_map),
+impl WindowLayout {
+    pub fn new(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
+        match config.mode {
+            WallpaperMode::WallpaperPerMonitor => Self::handle_per_monitor(config, monitor_map),
+            WallpaperMode::CloneSingleWallpaper => Self::handle_clone_single(config, monitor_map),
+            WallpaperMode::StretchSingleWallpaper => {
+                Self::handle_stretch_single(config, monitor_map)
+            }
+        }
     }
-}
 
-fn handle_per_monitor(config: &LiveWallpaperConfig, monitor_map: &MonitorMap) -> WindowLayout {
-    let mut windows = Vec::new();
+    fn handle_per_monitor(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
+        let mut windows = Vec::new();
 
-    for monitor in &config.monitors {
-        if let MonitorConfig::Primary {
+        for monitor in &config.monitors {
+            if let MonitorConfig::Primary {
+                monitor,
+                wallpaper_type,
+                wallpaper_source,
+            } = monitor
+            {
+                if let Some(MonitorInfo {
+                    x,
+                    y,
+                    width,
+                    height,
+                }) = monitor_map.get(monitor)
+                {
+                    windows.push(WindowInfo::Primary {
+                        monitor: monitor.clone(),
+                        window_x: *x,
+                        window_y: *y,
+                        window_width: *width,
+                        window_height: *height,
+                        window_title: format!("Live Wallpaper - {monitor}"),
+                        wallpaper_type: *wallpaper_type,
+                        wallpaper_source: wallpaper_source.clone(),
+                    })
+                }
+            }
+        }
+
+        Self { windows }
+    }
+
+    fn handle_clone_single(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
+        let mut windows = Vec::new();
+        let mut primary = None;
+
+        // Add the primary
+        if let Some(MonitorConfig::Primary {
             monitor,
             wallpaper_type,
             wallpaper_source,
-        } = monitor
+        }) = config
+            .monitors
+            .iter()
+            .find(|m| matches!(m, MonitorConfig::Primary { .. }))
         {
             if let Some(MonitorInfo {
                 x,
@@ -133,6 +100,8 @@ fn handle_per_monitor(config: &LiveWallpaperConfig, monitor_map: &MonitorMap) ->
                 height,
             }) = monitor_map.get(monitor)
             {
+                primary = Some(monitor.clone());
+
                 windows.push(WindowInfo::Primary {
                     monitor: monitor.clone(),
                     window_x: *x,
@@ -145,120 +114,83 @@ fn handle_per_monitor(config: &LiveWallpaperConfig, monitor_map: &MonitorMap) ->
                 })
             }
         }
-    }
 
-    WindowLayout { windows }
-}
-
-fn handle_clone(config: &LiveWallpaperConfig, monitor_map: &MonitorMap) -> WindowLayout {
-    let mut windows = Vec::new();
-    let mut primary = None;
-
-    // Add the primary
-    if let Some(MonitorConfig::Primary {
-        monitor,
-        wallpaper_type,
-        wallpaper_source,
-    }) = config
-        .monitors
-        .iter()
-        .find(|m| matches!(m, MonitorConfig::Primary { .. }))
-    {
-        if let Some(MonitorInfo {
-            x,
-            y,
-            width,
-            height,
-        }) = monitor_map.get(monitor)
-        {
-            primary = Some(monitor.clone());
-
-            windows.push(WindowInfo::Primary {
-                monitor: monitor.clone(),
-                window_x: *x,
-                window_y: *y,
-                window_width: *width,
-                window_height: *height,
-                window_title: format!("Live Wallpaper - {monitor}"),
-                wallpaper_type: *wallpaper_type,
-                wallpaper_source: wallpaper_source.clone(),
-            })
-        }
-    }
-
-    // Add the clones
-    if let Some(primary_monitor) = primary {
-        for monitor in &config.monitors {
-            if let MonitorConfig::Clone { monitor, .. } = monitor {
-                if let Some(MonitorInfo {
-                    x,
-                    y,
-                    width,
-                    height,
-                }) = monitor_map.get(monitor)
-                {
-                    windows.push(WindowInfo::Clone {
-                        monitor: monitor.clone(),
-                        window_x: *x,
-                        window_y: *y,
-                        window_width: *width,
-                        window_height: *height,
-                        window_title: format!(
-                            "Live Wallpaper - {monitor} (Clone of {primary_monitor})"
-                        ),
-                        clone_source: primary_monitor.clone(),
-                    })
+        // Add the clones
+        if let Some(primary_monitor) = primary {
+            for monitor in &config.monitors {
+                if let MonitorConfig::Clone { monitor, .. } = monitor {
+                    if let Some(MonitorInfo {
+                        x,
+                        y,
+                        width,
+                        height,
+                    }) = monitor_map.get(monitor)
+                    {
+                        windows.push(WindowInfo::Clone {
+                            monitor: monitor.clone(),
+                            window_x: *x,
+                            window_y: *y,
+                            window_width: *width,
+                            window_height: *height,
+                            window_title: format!(
+                                "Live Wallpaper - {monitor} (Clone of {primary_monitor})"
+                            ),
+                            clone_source: primary_monitor.clone(),
+                        })
+                    }
                 }
             }
         }
+
+        Self { windows }
     }
 
-    WindowLayout { windows }
-}
+    fn handle_stretch_single(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
+        let mut windows = Vec::new();
 
-fn handle_stretch(config: &LiveWallpaperConfig, monitor_map: &MonitorMap) -> WindowLayout {
-    let mut windows = Vec::new();
+        // Calculate bounding box, given the leftmost rect has x == 0 and the topmost rect has y == 0
+        let (box_width, box_height) = monitor_map.values().fold(
+            (0, 0),
+            |acc,
+             MonitorInfo {
+                 x,
+                 y,
+                 width,
+                 height,
+             }| { (acc.0.max(*x + *width), acc.1.max(*y + *height)) },
+        );
 
-    // Calculate bounding box, given the leftmost rect has x == 0 and the topmost rect has y == 0
-    let (box_width, box_height) = monitor_map.values().fold(
-        (0, 0),
-        |acc,
-         MonitorInfo {
-             x,
-             y,
-             width,
-             height,
-         }| { (acc.0.max(*x + *width), acc.1.max(*y + *height)) },
-    );
+        if let Some(MonitorConfig::Primary {
+            wallpaper_type,
+            wallpaper_source,
+            ..
+        }) = config.monitors.first()
+        {
+            windows.push(WindowInfo::Primary {
+                monitor: "STRETCH".to_string(),
+                window_x: 0,
+                window_y: 0,
+                window_width: box_width,
+                window_height: box_height,
+                window_title: "Live Wallpaper - STRETCH".to_string(),
+                wallpaper_type: *wallpaper_type,
+                wallpaper_source: wallpaper_source.clone(),
+            });
+        }
 
-    if let Some(MonitorConfig::Primary {
-        wallpaper_type,
-        wallpaper_source,
-        ..
-    }) = config.monitors.first()
-    {
-        windows.push(WindowInfo::Primary {
-            monitor: "STRETCH".to_string(),
-            window_x: 0,
-            window_y: 0,
-            window_width: box_width,
-            window_height: box_height,
-            window_title: "Live Wallpaper - STRETCH".to_string(),
-            wallpaper_type: *wallpaper_type,
-            wallpaper_source: wallpaper_source.clone(),
-        });
+        Self { windows }
     }
-
-    WindowLayout { windows }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    use std::collections::HashMap;
+
     #[test]
     fn test_wallpaper_per_monitor() {
-        let config = LiveWallpaperConfig {
+        let config = WallpaperConfig {
             mode: WallpaperMode::WallpaperPerMonitor,
             monitors: vec![
                 MonitorConfig::Primary {
@@ -299,7 +231,7 @@ mod tests {
             ),
         ]);
 
-        let layout = convert_to_window_layout(&config, &monitor_map);
+        let layout = WindowLayout::new(&config, &monitor_map);
 
         assert_eq!(layout.windows.len(), 2);
 
@@ -340,7 +272,7 @@ mod tests {
 
     #[test]
     fn test_clone_single_wallpaper() {
-        let config = LiveWallpaperConfig {
+        let config = WallpaperConfig {
             mode: WallpaperMode::CloneSingleWallpaper,
             monitors: vec![
                 MonitorConfig::Primary {
@@ -378,7 +310,7 @@ mod tests {
             ),
         ]);
 
-        let layout = convert_to_window_layout(&config, &monitor_map);
+        let layout = WindowLayout::new(&config, &monitor_map);
 
         assert_eq!(layout.windows.len(), 2);
 
@@ -408,7 +340,7 @@ mod tests {
 
     #[test]
     fn test_stretch_single_wallpaper() {
-        let config = LiveWallpaperConfig {
+        let config = WallpaperConfig {
             mode: WallpaperMode::StretchSingleWallpaper,
             monitors: vec![MonitorConfig::Primary {
                 monitor: "STRETCH".into(),
@@ -449,7 +381,7 @@ mod tests {
             ),
         ]);
 
-        let layout = convert_to_window_layout(&config, &monitor_map);
+        let layout = WindowLayout::new(&config, &monitor_map);
 
         assert_eq!(layout.windows.len(), 1);
 
