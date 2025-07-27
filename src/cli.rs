@@ -7,32 +7,51 @@ use hotaru::prelude::*;
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
 pub struct Cli {
-    /// Launch mode
-    #[arg(short = 'l', long = "launch-mode", default_value_t)]
+    #[arg(
+        short = 'l',
+        long = "launch-mode",
+        default_value_t,
+        help = "Launch mode"
+    )]
     pub launch_mode: LaunchMode,
 
-    /// Path to config JSON file
-    #[arg(short = 'c', long = "config", value_name = "FILE")]
+    #[arg(
+        short = 'c',
+        long = "config",
+        value_name = "FILE",
+        help = "Path to the wallpaper config JSON file"
+    )]
     pub config_file: PathBuf,
 
-    /// Log level
-    #[clap(long, default_value = "info")]
+    #[arg(
+        long,
+        default_value = "info",
+        help = "Logging level following RUST_LOG format"
+    )]
     pub log_level: String,
 
-    /// Use Clapper for video playback
     #[arg(
         long,
         default_value_t = true,
-        action = ArgAction::Set
+        action = ArgAction::Set,
+        help = "Use Clapper for video playback",
+        long_help = "Use Clapper as the video playback backend. \
+                     Set to false to use the GTK4 Plugin from GStreamer instead.",
     )]
     use_clapper: bool,
 
-    /// Enable VA decoders for improved performance on Intel/AMD Wayland setups
-    #[arg(long, default_value_t = false)]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Enable VA decoders for improved performance on Intel/AMD Wayland setups (experimental; default: false)"
+    )]
     enable_va: bool,
 
-    /// Enable stateless NVIDIA decoders
-    #[arg(long, default_value_t = false)]
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Enable stateless NVIDIA decoders, which may improve NVIDIA hardware acceleration (experimental; default: false)"
+    )]
     enable_nvsl: bool,
 }
 
