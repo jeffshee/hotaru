@@ -130,11 +130,7 @@ impl HotaruApplication {
 mod imp {
     use super::*;
 
-    use std::{
-        cell::RefCell,
-        env,
-        process::{exit, Command},
-    };
+    use std::{cell::RefCell, env, os::unix::process::CommandExt as _, process::Command};
 
     use gtk::{
         gdk::Display,
@@ -191,11 +187,8 @@ mod imp {
             // Fallback to XWayland
             env::set_var("GDK_BACKEND", "x11");
             let args: Vec<String> = env::args().collect();
-            Command::new(&args[0])
-                .args(&args[1..])
-                .spawn()
-                .expect("Failed to fallback to XWayland");
-            exit(0);
+            let _error = Command::new(&args[0]).args(&args[1..]).exec();
+            unreachable!("Failed to execute XWayland fallback");
         }
     }
 }
