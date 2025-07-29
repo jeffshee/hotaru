@@ -183,9 +183,10 @@ mod imp {
 
     fn fallback_to_xwayland() {
         let display = Display::default().expect("Failed to get default display");
-        let is_x11 = display
-            .type_()
-            .is_a(Type::from_name("GdkX11Display").unwrap());
+        let is_x11 = Type::from_name("GdkX11Display")
+            .map(|x11_type| display.type_().is_a(x11_type))
+            .unwrap_or(false);
+
         if !is_x11 {
             // Fallback to XWayland
             env::set_var("GDK_BACKEND", "x11");
