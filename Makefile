@@ -49,23 +49,6 @@ clean:
 	rm -rf $(BUILDDIR)
 	cargo clean
 
-# Generate a new .rs file with license header
-%.rs:
-	@if [ ! -f $(SRC_DIR)/$@ ]; then \
-		mkdir -p $(SRC_DIR); \
-		echo "Generating $(SRC_DIR)/$@"; \
-		year=$$(date +%Y); \
-		sed -e "s/{filename}/$@/" \
-			-e "s/{year}/$${year}/" \
-			-e "s/{author}/$(AUTHOR)/" \
-			$(LICENSE_HEADER) > $(SRC_DIR)/$@; \
-		echo "" >> $(SRC_DIR)/$@; \
-		echo "// Add your code here" >> $(SRC_DIR)/$@; \
-		echo "File $(SRC_DIR)/$@ created with license header."; \
-	else \
-		echo "File $(SRC_DIR)/$@ already exists. Skipping."; \
-	fi
-
 # Flatpak targets
 .PHONY: install-flathub-repo
 install-flathub-repo:

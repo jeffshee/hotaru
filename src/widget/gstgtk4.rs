@@ -1,22 +1,19 @@
-/* gstgtk4.rs
- *
- * Copyright 2024 Jeff Shee
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- *
- * SPDX-License-Identifier: GPL-3.0-or-later
- */
+// Copyright (C) 2026  Jeff Shee
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
 
 use glib::Object;
 use gtk::{gio, glib, prelude::*};
@@ -48,9 +45,8 @@ impl RendererWidget for GstGtk4Widget {
             .paintable(&paintable)
             .hexpand(true)
             .vexpand(true)
+            .content_fit(self.picture().content_fit())
             .build();
-        // TODO: Make it configurable
-        picture.set_content_fit(gtk::ContentFit::Cover);
 
         #[cfg(feature = "gtk_v4_14")]
         {
@@ -75,6 +71,18 @@ impl RendererWidget for GstGtk4Widget {
 
     fn stop(&self) {
         self.player().stop();
+    }
+
+    fn set_volume(&self, volume: f64) {
+        self.player().set_volume(volume);
+    }
+
+    fn set_mute(&self, mute: bool) {
+        self.player().set_mute(mute);
+    }
+
+    fn set_content_fit(&self, fit: gtk::ContentFit) {
+        self.picture().set_content_fit(fit);
     }
 }
 
@@ -129,8 +137,6 @@ mod imp {
                 .hexpand(true)
                 .vexpand(true)
                 .build();
-            // TODO: Make it configurable
-            picture.set_content_fit(gtk::ContentFit::Cover);
 
             #[cfg(feature = "gtk_v4_14")]
             {

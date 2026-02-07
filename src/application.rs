@@ -1,24 +1,21 @@
-/* application.rs
- *
- * Copyright 2024 Jeff Shee
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- *
- * SPDX-License-Identifier: GPL-3.0-or-later
- */
+// Copyright (C) 2026  Jeff Shee
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{collections::HashMap, str::FromStr as _};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr as _};
 
 use glib::Object;
 use gtk::{gio, glib, prelude::*};
@@ -53,7 +50,17 @@ impl HotaruApplication {
             .build()
     }
 
-    pub fn build_ui(&self, config: &WallpaperConfig, use_clapper: bool) {
+    /// Build the UI and store active renderers in the shared state.
+    ///
+    /// The `renderers` parameter is a shared vec that is populated with the
+    /// primary renderers created during this call. It is cleared first to
+    /// remove any previously active renderers.
+    pub fn build_ui(
+        &self,
+        config: &WallpaperConfig,
+        use_clapper: bool,
+        renderers: &Rc<RefCell<Vec<Renderer>>>,
+    ) {
         let launch_mode = LaunchMode::from_str(&self.launch_mode()).unwrap();
         let monitor_map = MonitorTracker::monitors()
             .unwrap()
@@ -124,6 +131,11 @@ impl HotaruApplication {
                 window.present();
             }
         });
+
+        // Store renderers in shared state
+        let mut shared = renderers.borrow_mut();
+        shared.clear();
+        shared.extend(primary_widgets.into_values());
     }
 }
 

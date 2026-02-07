@@ -1,3 +1,20 @@
+// Copyright (C) 2026  Jeff Shee
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+//
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 use std::{env, path::PathBuf};
 
 use clap::{ArgAction, Parser};
@@ -19,9 +36,9 @@ pub struct Cli {
         short = 'c',
         long = "config",
         value_name = "FILE",
-        help = "Path to the wallpaper config JSON file"
+        help = "Path to the wallpaper config JSON file (not required in daemon mode)"
     )]
-    pub config_file: PathBuf,
+    pub config_file: Option<PathBuf>,
 
     #[arg(
         long,
@@ -53,6 +70,13 @@ pub struct Cli {
         help = "Enable stateless NVIDIA decoders, which may improve NVIDIA hardware acceleration (experimental; default: false)"
     )]
     enable_nvsl: bool,
+
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Run as a D-Bus daemon, waiting for commands from the frontend"
+    )]
+    pub daemon: bool,
 }
 
 impl Cli {
