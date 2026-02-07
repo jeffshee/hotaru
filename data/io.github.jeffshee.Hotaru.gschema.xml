@@ -1,5 +1,62 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist gettext-domain="hotaru">
 	<schema id="io.github.jeffshee.Hotaru" path="/io/github/jeffshee/Hotaru/">
+		<!-- Audio -->
+		<key name="mute" type="b">
+			<default>false</default>
+			<summary>Mute audio</summary>
+			<description>Mute audio during wallpaper playback</description>
+		</key>
+		<key name="volume" type="i">
+			<default>50</default>
+			<range min="0" max="100"/>
+			<summary>Volume level</summary>
+			<description>Audio volume level (0-100)</description>
+		</key>
+
+		<!-- Display -->
+		<key name="content-fit" type="i">
+			<default>1</default>
+			<range min="0" max="3"/>
+			<summary>Content fit mode</summary>
+			<description>How the wallpaper fits in the window (0: Fill, 1: Contain, 2: Cover, 3: Scale-down)</description>
+		</key>
+
+		<!-- Debug -->
+		<key name="debug-mode" type="b">
+			<default>false</default>
+			<summary>Debug mode</summary>
+			<description>Enable debug logging</description>
+		</key>
+
+		<!-- Hardware acceleration (read at startup) -->
+		<key name="enable-va" type="b">
+			<default>false</default>
+			<summary>Enable VA decoders</summary>
+			<description>Enable experimental VA decoders for Intel/AMD Wayland setups</description>
+		</key>
+		<key name="enable-nvsl" type="b">
+			<default>false</default>
+			<summary>Enable NVIDIA stateless decoders</summary>
+			<description>Enable NVIDIA stateless decoders for improved hardware acceleration</description>
+		</key>
+		<key name="force-gtk4paintablesink" type="b">
+			<default>false</default>
+			<summary>Force gtk4paintablesink</summary>
+			<description>Force gtk4paintablesink as the video renderer</description>
+		</key>
+		<key name="enable-graphics-offload" type="b">
+			<default>false</default>
+			<summary>Enable graphics offload</summary>
+			<description>Enable graphics offload (requires GTK 4.14+)</description>
+		</key>
+
+		<!-- Startup -->
+		<key name="startup-delay" type="i">
+			<default>1000</default>
+			<range min="0" max="10000"/>
+			<summary>Startup delay</summary>
+			<description>Startup delay in milliseconds for compatibility</description>
+		</key>
 	</schema>
 </schemalist>
