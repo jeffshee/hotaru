@@ -218,9 +218,11 @@ impl RendererState {
 
 struct RendererService {
     cmd_tx: mpsc::SyncSender<Command>,
+    /// Connection reference used to emit PropertiesChanged signals.
+    conn: std::sync::Mutex<Option<zbus::Connection>>,
 }
 
-// SAFETY: RendererService only contains a SyncSender which is Send + Sync
+// SAFETY: RendererService only contains Send + Sync types
 unsafe impl Send for RendererService {}
 unsafe impl Sync for RendererService {}
 
@@ -240,10 +242,13 @@ impl RendererService {
             })
             .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
 
-        reply_rx
+        let result = reply_rx
             .recv()
             .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?
-            .map_err(|e| zbus::fdo::Error::Failed(e))
+            .map_err(|e| zbus::fdo::Error::Failed(e))?;
+
+        self.emit_state_changed().await;
+        Ok(result)
     }
 
     async fn disable_wallpaper(&self) -> zbus::fdo::Result<bool> {
@@ -252,9 +257,12 @@ impl RendererService {
             .send(Command::DisableWallpaper { reply: reply_tx })
             .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
 
-        reply_rx
+        let result = reply_rx
             .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?;
+
+        self.emit_state_changed().await;
+        Ok(result)
     }
 
     async fn pause(&self) -> zbus::fdo::Result<bool> {
@@ -263,9 +271,12 @@ impl RendererService {
             .send(Command::Pause { reply: reply_tx })
             .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
 
-        reply_rx
+        let result = reply_rx
             .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?;
+
+        self.emit_state_changed().await;
+        Ok(result)
     }
 
     async fn resume(&self) -> zbus::fdo::Result<bool> {
@@ -274,9 +285,12 @@ impl RendererService {
             .send(Command::Resume { reply: reply_tx })
             .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
 
-        reply_rx
+        let result = reply_rx
             .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?;
+
+        self.emit_state_changed().await;
+        Ok(result)
     }
 
     async fn quit(&self) -> zbus::fdo::Result<()> {
@@ -295,6 +309,23 @@ impl RendererService {
         reply_rx
             .recv()
             .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))
+    }
+}
+
+impl RendererService {
+    /// Emit a PropertiesChanged signal for the State property.
+    async fn emit_state_changed(&self) {
+        let conn = self.conn.lock().unwrap().clone();
+        if let Some(conn) = conn {
+            if let Ok(iface_ref) = conn
+                .object_server()
+                .interface::<_, RendererService>(DBUS_PATH)
+                .await
+            {
+                let ctx = iface_ref.signal_emitter();
+                let _ = self.state_changed(ctx).await;
+            }
+        }
     }
 }
 
@@ -318,9 +349,12 @@ pub fn register_dbus_service(state: Rc<RendererState>) {
     // zbus uses the async-io/smol ecosystem, so we use async_io::block_on.
     std::thread::spawn(move || {
         async_io::block_on(async move {
-            let service = RendererService { cmd_tx };
+            let service = RendererService {
+                cmd_tx,
+                conn: std::sync::Mutex::new(None),
+            };
 
-            let _connection = match zbus::connection::Builder::session()
+            let connection = match zbus::connection::Builder::session()
                 .expect("Failed to create session builder")
                 .name(DBUS_NAME)
                 .expect("Failed to set bus name")
@@ -339,6 +373,16 @@ pub fn register_dbus_service(state: Rc<RendererState>) {
                     return;
                 }
             };
+
+            // Store the connection reference in the service so it can emit signals.
+            if let Ok(iface_ref) = connection
+                .object_server()
+                .interface::<_, RendererService>(DBUS_PATH)
+                .await
+            {
+                let iface = iface_ref.get().await;
+                *iface.conn.lock().unwrap() = Some(connection.clone());
+            }
 
             info!("D-Bus service registered: {} at {}", DBUS_NAME, DBUS_PATH);
 
