@@ -18,7 +18,7 @@
 use gdk_x11::X11Surface;
 use glib::Object;
 use gtk::{gio, glib, prelude::*};
-use log::{debug, error};
+use tracing::{debug, error};
 use x11rb::{
     connection::Connection,
     protocol::xproto::{AtomEnum, ConfigureWindowAux, ConnectionExt, PropMode},

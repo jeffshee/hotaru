@@ -93,7 +93,7 @@ mod imp {
 
     use glib::Properties;
     use gtk::{gdk, subclass::prelude::*};
-    use log::{debug, error, warn};
+    use tracing::{debug, error, warn};
 
     #[derive(Properties, Default)]
     #[properties(wrapper_type = super::ClapperWidget)]

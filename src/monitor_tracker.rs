@@ -54,7 +54,7 @@ mod imp {
 
     use glib::subclass::Signal;
     use gtk::subclass::prelude::*;
-    use log::debug;
+    use tracing::debug;
 
     use crate::model::MonitorListModelExt as _;
 

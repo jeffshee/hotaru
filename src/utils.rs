@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use gst::prelude::*;
-use log::debug;
+use tracing::debug;
 
 pub fn setup_gst(is_enable_va: bool, is_enable_nvsl: bool) {
     // Software libav decoders have "primary" rank, set Nvidia higher to use NVDEC hardware acceleration.

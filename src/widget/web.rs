@@ -79,7 +79,7 @@ mod imp {
 
     use glib::Properties;
     use gtk::subclass::prelude::*;
-    use log::debug;
+    use tracing::debug;
     use webkit::{prelude::*, WebView};
 
     #[derive(Properties, Default)]

@@ -20,7 +20,7 @@ use std::rc::Rc;
 
 use gtk::gio;
 use gtk::prelude::*;
-use log::info;
+use tracing::info;
 
 use crate::constant::APPLICATION_ID;
 use crate::widget::{Renderer, RendererWidget};
