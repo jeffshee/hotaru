@@ -58,5 +58,16 @@
 			<summary>Startup delay</summary>
 			<description>Startup delay in milliseconds for compatibility</description>
 		</key>
+		<!-- Last applied wallpaper (for auto-restore on daemon startup) -->
+		<key name="last-wallpaper-config" type="s">
+			<default>''</default>
+			<summary>Last wallpaper config</summary>
+			<description>JSON config of the last applied wallpaper, used to restore on daemon startup</description>
+		</key>
+		<key name="last-launch-mode" type="s">
+			<default>''</default>
+			<summary>Last launch mode</summary>
+			<description>Launch mode of the last applied wallpaper (e.g. x11-desktop, gnome-ext-hanabi)</description>
+		</key>
 	</schema>
 </schemalist>

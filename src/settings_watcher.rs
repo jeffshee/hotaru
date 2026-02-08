@@ -113,6 +113,26 @@ impl SettingsWatcher {
             });
     }
 
+    // --- Last applied wallpaper persistence ---
+
+    pub fn last_wallpaper_config(&self) -> String {
+        self.settings.string("last-wallpaper-config").to_string()
+    }
+
+    pub fn set_last_wallpaper_config(&self, value: &str) {
+        self.settings
+            .set_string("last-wallpaper-config", value)
+            .ok();
+    }
+
+    pub fn last_launch_mode(&self) -> String {
+        self.settings.string("last-launch-mode").to_string()
+    }
+
+    pub fn set_last_launch_mode(&self, value: &str) {
+        self.settings.set_string("last-launch-mode", value).ok();
+    }
+
     /// Apply current settings to all active renderers (e.g., after applying a new wallpaper).
     pub fn apply_to_renderers(&self, renderers: &[Renderer]) {
         let volume = self.volume();

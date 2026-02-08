@@ -107,6 +107,17 @@ fn main() -> anyhow::Result<()> {
         // so it stays alive even with no windows open.
         app.register(gio::Cancellable::NONE)?;
         let _hold_guard = app.hold();
+
+        // Auto-restore last wallpaper if available
+        let last_config = state.settings_watcher.last_wallpaper_config();
+        let last_launch_mode = state.settings_watcher.last_launch_mode();
+        if !last_config.is_empty() && !last_launch_mode.is_empty() {
+            info!("Restoring last wallpaper on daemon startup");
+            if let Err(e) = state.apply_wallpaper(&last_config, &last_launch_mode) {
+                tracing::error!("Failed to restore last wallpaper: {}", e);
+            }
+        }
+
         // Run the GLib main loop directly. app.run() would exit immediately
         // with NON_UNIQUE because there's nothing keeping the run loop alive
         // before hold() takes effect.

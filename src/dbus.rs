@@ -101,7 +101,11 @@ impl RendererState {
         })
     }
 
-    fn apply_wallpaper(&self, config_json: &str, launch_mode_str: &str) -> Result<bool, String> {
+    pub fn apply_wallpaper(
+        &self,
+        config_json: &str,
+        launch_mode_str: &str,
+    ) -> Result<bool, String> {
         let config: WallpaperConfig =
             serde_json::from_str(config_json).map_err(|e| format!("Invalid config JSON: {}", e))?;
         let launch_mode = LaunchMode::from_str(launch_mode_str)
@@ -129,6 +133,10 @@ impl RendererState {
 
         *self.playback_state.borrow_mut() = PlaybackState::Playing;
 
+        // Persist for auto-restore on next daemon startup
+        self.settings_watcher.set_last_wallpaper_config(config_json);
+        self.settings_watcher.set_last_launch_mode(launch_mode_str);
+
         Ok(true)
     }
 
@@ -144,6 +152,10 @@ impl RendererState {
         self.renderers.borrow_mut().clear();
         *self.config.borrow_mut() = None;
         *self.playback_state.borrow_mut() = PlaybackState::Idle;
+
+        // Clear persisted config
+        self.settings_watcher.set_last_wallpaper_config("");
+        self.settings_watcher.set_last_launch_mode("");
 
         true
     }
