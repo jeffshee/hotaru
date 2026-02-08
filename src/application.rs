@@ -15,11 +15,11 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr as _};
+use std::{cell::RefCell, collections::HashMap, env, os::unix::process::CommandExt as _, rc::Rc};
 
 use glib::Object;
-use gtk::{gio, glib, prelude::*};
-use log::info;
+use gtk::{gdk::Display, gio, glib, glib::Type, prelude::*};
+use tracing::{info, warn};
 
 use crate::{
     model::{
@@ -38,15 +38,10 @@ glib::wrapper! {
 }
 
 impl HotaruApplication {
-    pub fn new(
-        application_id: &str,
-        flags: &gio::ApplicationFlags,
-        launch_mode: LaunchMode,
-    ) -> Self {
+    pub fn new(application_id: &str, flags: &gio::ApplicationFlags) -> Self {
         Object::builder()
             .property("application_id", application_id)
             .property("flags", flags)
-            .property("launch_mode", launch_mode)
             .build()
     }
 
@@ -60,8 +55,8 @@ impl HotaruApplication {
         config: &WallpaperConfig,
         use_clapper: bool,
         renderers: &Rc<RefCell<Vec<Renderer>>>,
+        launch_mode: LaunchMode,
     ) {
-        let launch_mode = LaunchMode::from_str(&self.launch_mode()).unwrap();
         let monitor_map = MonitorTracker::monitors()
             .unwrap()
             .try_to_monitor_map()
@@ -139,25 +134,33 @@ impl HotaruApplication {
     }
 }
 
+/// If the current display is not X11, set `GDK_BACKEND=x11` and re-exec
+/// the process so that GTK uses XWayland. This is required for X11Desktop
+/// launch mode where we need X11 window type hints.
+///
+/// If already on X11, this is a no-op.
+pub fn fallback_to_xwayland() {
+    let display = Display::default().expect("Failed to get default display");
+    let is_x11 = Type::from_name("GdkX11Display")
+        .map(|x11_type| display.type_().is_a(x11_type))
+        .unwrap_or(false);
+
+    if !is_x11 {
+        warn!("Display is not X11, re-executing with GDK_BACKEND=x11 for XWayland fallback");
+        env::set_var("GDK_BACKEND", "x11");
+        let args: Vec<String> = env::args().collect();
+        let _error = std::process::Command::new(&args[0]).args(&args[1..]).exec();
+        unreachable!("Failed to execute XWayland fallback");
+    }
+}
+
 mod imp {
     use super::*;
 
-    use std::{cell::RefCell, env, os::unix::process::CommandExt as _, process::Command};
+    use gtk::{glib, subclass::prelude::*};
 
-    use gtk::{
-        gdk::Display,
-        glib::{self, Properties, Type},
-        subclass::prelude::*,
-    };
-
-    use crate::constant::LAUNCH_MODE_X11_DESKTOP;
-
-    #[derive(Properties, Default)]
-    #[properties(wrapper_type = super::HotaruApplication)]
-    pub struct HotaruApplication {
-        #[property(get, construct_only)]
-        launch_mode: RefCell<String>,
-    }
+    #[derive(Default)]
+    pub struct HotaruApplication;
 
     #[glib::object_subclass]
     impl ObjectSubclass for HotaruApplication {
@@ -166,17 +169,7 @@ mod imp {
         type ParentType = gtk::Application;
     }
 
-    #[glib::derived_properties]
-    impl ObjectImpl for HotaruApplication {
-        fn constructed(&self) {
-            self.parent_constructed();
-
-            let obj = self.obj();
-            if obj.launch_mode() == LAUNCH_MODE_X11_DESKTOP {
-                fallback_to_xwayland();
-            }
-        }
-    }
+    impl ObjectImpl for HotaruApplication {}
 
     impl ApplicationImpl for HotaruApplication {
         fn command_line(&self, _command_line: &gio::ApplicationCommandLine) -> glib::ExitCode {
@@ -188,19 +181,4 @@ mod imp {
     }
 
     impl GtkApplicationImpl for HotaruApplication {}
-
-    fn fallback_to_xwayland() {
-        let display = Display::default().expect("Failed to get default display");
-        let is_x11 = Type::from_name("GdkX11Display")
-            .map(|x11_type| display.type_().is_a(x11_type))
-            .unwrap_or(false);
-
-        if !is_x11 {
-            // Fallback to XWayland
-            env::set_var("GDK_BACKEND", "x11");
-            let args: Vec<String> = env::args().collect();
-            let _error = Command::new(&args[0]).args(&args[1..]).exec();
-            unreachable!("Failed to execute XWayland fallback");
-        }
-    }
 }

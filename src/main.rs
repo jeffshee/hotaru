@@ -22,11 +22,12 @@ use std::rc::Rc;
 
 use clap::Parser as _;
 use gtk::{
-    gio::{ApplicationFlags, ListModel},
+    gio::{self, ApplicationFlags, ListModel},
     glib,
     prelude::*,
 };
-use log::{debug, info};
+use tracing::{debug, info};
+use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 
 use hotaru::dbus::{register_dbus_service, RendererState};
 use hotaru::prelude::*;
@@ -37,7 +38,9 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let is_use_clapper = cli.is_use_clapper();
 
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(&cli.log_level))
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&cli.log_level)))
         .init();
     info!("Hotaru started with args: {:#?}", cli);
 
@@ -50,24 +53,27 @@ fn main() -> anyhow::Result<()> {
     let is_enable_nvsl = cli.is_enable_nvsl() || settings_watcher.is_enable_nvsl();
     setup_gst(is_enable_va, is_enable_nvsl);
 
-    let app = HotaruApplication::new(
-        APPLICATION_ID,
-        &ApplicationFlags::HANDLES_COMMAND_LINE,
-        cli.launch_mode,
-    );
+    let mut app_flags = ApplicationFlags::HANDLES_COMMAND_LINE;
+    if cli.daemon {
+        // In daemon mode, prevent GApplication from claiming the bus name
+        // so our zbus-based D-Bus service can own it instead.
+        app_flags |= ApplicationFlags::NON_UNIQUE;
+    }
+
+    let app = HotaruApplication::new(APPLICATION_ID, &app_flags);
 
     if cli.daemon {
         // Daemon mode: register D-Bus service and wait for commands
         info!("Starting in daemon mode");
 
         let state = RendererState::new(app.clone(), is_use_clapper);
-        let state_clone = state.clone();
         let monitor_tracker = MonitorTracker::new();
 
-        app.connect_activate(move |_app| {
-            info!("Daemon activated, registering D-Bus service");
-            register_dbus_service(state_clone.clone());
-        });
+        // Register D-Bus service immediately (before app.run()) so it's
+        // available as soon as the process starts. This is critical for
+        // D-Bus activation: the caller expects the interface to be ready
+        // shortly after the process is launched.
+        register_dbus_service(state.clone());
 
         // In daemon mode, monitor changes trigger rebuild if a wallpaper is active
         let state_for_monitor = state.clone();
@@ -78,6 +84,7 @@ fn main() -> anyhow::Result<()> {
                 let monitor_map = list.try_to_monitor_map().unwrap();
                 debug!("monitor changed: {:?}", monitor_map);
                 if let Some(config) = state_for_monitor.config.borrow().as_ref() {
+                    let launch_mode = *state_for_monitor.launch_mode.borrow();
                     state_for_monitor
                         .app
                         .windows()
@@ -87,6 +94,7 @@ fn main() -> anyhow::Result<()> {
                         config,
                         state_for_monitor.use_clapper,
                         &state_for_monitor.renderers,
+                        launch_mode,
                     );
                     state_for_monitor
                         .settings_watcher
@@ -95,9 +103,23 @@ fn main() -> anyhow::Result<()> {
             }),
         );
 
-        app.run();
+        // Register the GApplication so it can create windows, but hold it
+        // so it stays alive even with no windows open.
+        app.register(gio::Cancellable::NONE)?;
+        let _hold_guard = app.hold();
+        // Run the GLib main loop directly. app.run() would exit immediately
+        // with NON_UNIQUE because there's nothing keeping the run loop alive
+        // before hold() takes effect.
+        glib::MainLoop::new(None, false).run();
     } else {
         // Standalone mode: read config file and run immediately
+        let launch_mode = cli.launch_mode;
+
+        // Handle XWayland fallback for X11Desktop mode
+        if launch_mode == LaunchMode::X11Desktop {
+            hotaru::application::fallback_to_xwayland();
+        }
+
         let config_file = cli
             .config_file
             .ok_or_else(|| anyhow::anyhow!("--config is required when not in daemon mode"))?;
@@ -119,12 +141,14 @@ fn main() -> anyhow::Result<()> {
                 let monitor_map = list.try_to_monitor_map().unwrap();
                 debug!("monitor changed: {:?}", monitor_map);
                 app_clone.windows().into_iter().for_each(|w| w.close());
-                app_clone.build_ui(&config_clone, is_use_clapper, &renderers_clone);
+                app_clone.build_ui(&config_clone, is_use_clapper, &renderers_clone, launch_mode);
             }),
         );
 
         let renderers_activate = renderers.clone();
-        app.connect_activate(move |app| app.build_ui(&config, is_use_clapper, &renderers_activate));
+        app.connect_activate(move |app| {
+            app.build_ui(&config, is_use_clapper, &renderers_activate, launch_mode)
+        });
         app.run();
     }
 

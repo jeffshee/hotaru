@@ -22,7 +22,7 @@ use std::sync::mpsc;
 
 use gtk::glib;
 use gtk::prelude::*;
-use log::info;
+use tracing::info;
 
 use crate::application::HotaruApplication;
 use crate::model::{LaunchMode, WallpaperConfig};
@@ -112,20 +112,21 @@ impl RendererState {
             config.mode, launch_mode
         );
 
+        // Update state before build_ui so monitor-changed handler sees correct values
+        *self.launch_mode.borrow_mut() = launch_mode;
+        *self.config.borrow_mut() = Some(config.clone());
+
         // Close existing windows
         self.app.windows().into_iter().for_each(|w| w.close());
 
         // Build new UI
         self.app
-            .build_ui(&config, self.use_clapper, &self.renderers);
+            .build_ui(&config, self.use_clapper, &self.renderers, launch_mode);
 
         // Apply current settings to new renderers
         self.settings_watcher
             .apply_to_renderers(&self.renderers.borrow());
 
-        // Update state
-        *self.config.borrow_mut() = Some(config);
-        *self.launch_mode.borrow_mut() = launch_mode;
         *self.playback_state.borrow_mut() = PlaybackState::Playing;
 
         Ok(true)
@@ -307,7 +308,7 @@ pub fn register_dbus_service(state: Rc<RendererState>) {
         async_io::block_on(async move {
             let service = RendererService { cmd_tx };
 
-            let _connection = zbus::connection::Builder::session()
+            let _connection = match zbus::connection::Builder::session()
                 .expect("Failed to create session builder")
                 .name(DBUS_NAME)
                 .expect("Failed to set bus name")
@@ -315,7 +316,17 @@ pub fn register_dbus_service(state: Rc<RendererState>) {
                 .expect("Failed to serve at path")
                 .build()
                 .await
-                .expect("Failed to build D-Bus connection");
+            {
+                Ok(conn) => conn,
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to build D-Bus connection: {}. \
+                         Is another instance already running?",
+                        e
+                    );
+                    return;
+                }
+            };
 
             info!("D-Bus service registered: {} at {}", DBUS_NAME, DBUS_PATH);
 
