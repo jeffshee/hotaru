@@ -80,12 +80,11 @@ pub struct RendererState {
     pub config: RefCell<Option<WallpaperConfig>>,
     pub launch_mode: RefCell<LaunchMode>,
     pub playback_state: RefCell<PlaybackState>,
-    pub use_clapper: bool,
     pub settings_watcher: SettingsWatcher,
 }
 
 impl RendererState {
-    pub fn new(app: HotaruApplication, use_clapper: bool) -> Rc<Self> {
+    pub fn new(app: HotaruApplication) -> Rc<Self> {
         let renderers = Rc::new(RefCell::new(Vec::new()));
         let settings_watcher = SettingsWatcher::new();
         settings_watcher.connect_runtime_settings(renderers.clone());
@@ -96,7 +95,6 @@ impl RendererState {
             config: RefCell::new(None),
             launch_mode: RefCell::new(LaunchMode::default()),
             playback_state: RefCell::new(PlaybackState::Idle),
-            use_clapper,
             settings_watcher,
         })
     }
@@ -124,8 +122,15 @@ impl RendererState {
         self.app.windows().into_iter().for_each(|w| w.close());
 
         // Build new UI
-        self.app
-            .build_ui(&config, self.use_clapper, &self.renderers, launch_mode);
+        let use_clapper = self.settings_watcher.is_use_clapper();
+        let enable_graphics_offload = self.settings_watcher.is_enable_graphics_offload();
+        self.app.build_ui(
+            &config,
+            use_clapper,
+            enable_graphics_offload,
+            &self.renderers,
+            launch_mode,
+        );
 
         // Apply current settings to new renderers
         self.settings_watcher

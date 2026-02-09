@@ -49,20 +49,12 @@ impl SettingsWatcher {
         self.settings.boolean("enable-nvsl")
     }
 
-    pub fn is_force_gtk4paintablesink(&self) -> bool {
-        self.settings.boolean("force-gtk4paintablesink")
+    pub fn is_use_clapper(&self) -> bool {
+        self.settings.boolean("use-clapper")
     }
 
     pub fn is_enable_graphics_offload(&self) -> bool {
         self.settings.boolean("enable-graphics-offload")
-    }
-
-    pub fn startup_delay(&self) -> i32 {
-        self.settings.int("startup-delay")
-    }
-
-    pub fn is_debug_mode(&self) -> bool {
-        self.settings.boolean("debug-mode")
     }
 
     /// Read the current volume as a 0.0-1.0 float from the 0-100 int setting.

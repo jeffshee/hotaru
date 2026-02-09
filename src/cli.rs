@@ -15,9 +15,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
-use clap::{ArgAction, Parser};
+use clap::Parser;
 
 use hotaru::prelude::*;
 
@@ -42,65 +42,8 @@ pub struct Cli {
 
     #[arg(
         long,
-        default_value = "info",
-        help = "Logging level following RUST_LOG format"
-    )]
-    pub log_level: String,
-
-    #[arg(
-        long,
-        default_value_t = true,
-        action = ArgAction::Set,
-        help = "Use Clapper for video playback",
-        long_help = "Use Clapper as the video playback backend. \
-                     Set to false to use the GTK4 Plugin from GStreamer instead.",
-    )]
-    use_clapper: bool,
-
-    #[arg(
-        long,
-        default_value_t = false,
-        help = "Enable VA decoders for improved performance on Intel/AMD Wayland setups (experimental; default: false)"
-    )]
-    enable_va: bool,
-
-    #[arg(
-        long,
-        default_value_t = false,
-        help = "Enable stateless NVIDIA decoders, which may improve NVIDIA hardware acceleration (experimental; default: false)"
-    )]
-    enable_nvsl: bool,
-
-    #[arg(
-        long,
         default_value_t = false,
         help = "Run as a D-Bus daemon, waiting for commands from the frontend"
     )]
     pub daemon: bool,
-}
-
-impl Cli {
-    pub fn is_use_clapper(&self) -> bool {
-        if self.use_clapper {
-            true
-        } else {
-            env::var("USE_CLAPPER").is_ok_and(|v| v == "true")
-        }
-    }
-
-    pub fn is_enable_va(&self) -> bool {
-        if self.enable_va {
-            true
-        } else {
-            env::var("ENABLE_VA").is_ok_and(|v| v == "true")
-        }
-    }
-
-    pub fn is_enable_nvsl(&self) -> bool {
-        if self.enable_nvsl {
-            true
-        } else {
-            env::var("ENABLE_NVSL").is_ok_and(|v| v == "true")
-        }
-    }
 }

@@ -38,7 +38,7 @@ impl RendererWidgetBuilder for WebWidget {
 }
 
 impl RendererWidget for WebWidget {
-    fn mirror(&self) -> gtk::Box {
+    fn mirror(&self, enable_graphics_offload: bool) -> gtk::Box {
         let widget = gtk::Box::builder().build();
         let paintable = gtk::WidgetPaintable::new(Some(&self.webview()));
         let picture = gtk::Picture::builder()
@@ -47,13 +47,16 @@ impl RendererWidget for WebWidget {
             .vexpand(true)
             .build();
         #[cfg(feature = "gtk_v4_14")]
-        {
+        if enable_graphics_offload {
             let offload = gtk::GraphicsOffload::new(Some(&picture));
             offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
             widget.append(&offload);
+        } else {
+            widget.append(&picture);
         }
         #[cfg(not(feature = "gtk_v4_14"))]
         {
+            let _ = enable_graphics_offload;
             widget.append(&picture);
         }
         widget

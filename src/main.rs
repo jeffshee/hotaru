@@ -36,22 +36,22 @@ use crate::cli::Cli;
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let is_use_clapper = cli.is_use_clapper();
 
     tracing_subscriber::registry()
         .with(fmt::layer())
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&cli.log_level)))
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("hotaru=info")))
         .init();
     info!("Hotaru started with args: {:#?}", cli);
 
     gst::init().unwrap();
     gtk::init().unwrap();
 
-    // Read GSettings for startup-only settings, with CLI overrides
+    // Read GSettings for startup-only settings
     let settings_watcher = hotaru::settings_watcher::SettingsWatcher::new();
-    let is_enable_va = cli.is_enable_va() || settings_watcher.is_enable_va();
-    let is_enable_nvsl = cli.is_enable_nvsl() || settings_watcher.is_enable_nvsl();
-    setup_gst(is_enable_va, is_enable_nvsl);
+    setup_gst(
+        settings_watcher.is_enable_va(),
+        settings_watcher.is_enable_nvsl(),
+    );
 
     let mut app_flags = ApplicationFlags::HANDLES_COMMAND_LINE;
     if cli.daemon {
@@ -66,7 +66,7 @@ fn main() -> anyhow::Result<()> {
         // Daemon mode: register D-Bus service and wait for commands
         info!("Starting in daemon mode");
 
-        let state = RendererState::new(app.clone(), is_use_clapper);
+        let state = RendererState::new(app.clone());
         let monitor_tracker = MonitorTracker::new();
 
         // Register D-Bus service immediately (before app.run()) so it's
@@ -90,9 +90,14 @@ fn main() -> anyhow::Result<()> {
                         .windows()
                         .into_iter()
                         .for_each(|w| w.close());
+                    let use_clapper = state_for_monitor.settings_watcher.is_use_clapper();
+                    let enable_graphics_offload = state_for_monitor
+                        .settings_watcher
+                        .is_enable_graphics_offload();
                     state_for_monitor.app.build_ui(
                         config,
-                        state_for_monitor.use_clapper,
+                        use_clapper,
+                        enable_graphics_offload,
                         &state_for_monitor.renderers,
                         launch_mode,
                     );
@@ -144,6 +149,7 @@ fn main() -> anyhow::Result<()> {
         let app_clone = app.clone();
         let config_clone = config.clone();
         let renderers_clone = renderers.clone();
+        let sw_clone = hotaru::settings_watcher::SettingsWatcher::new();
         let monitor_tracker = MonitorTracker::new();
         monitor_tracker.connect_closure(
             "monitor-changed",
@@ -152,13 +158,29 @@ fn main() -> anyhow::Result<()> {
                 let monitor_map = list.try_to_monitor_map().unwrap();
                 debug!("monitor changed: {:?}", monitor_map);
                 app_clone.windows().into_iter().for_each(|w| w.close());
-                app_clone.build_ui(&config_clone, is_use_clapper, &renderers_clone, launch_mode);
+                let use_clapper = sw_clone.is_use_clapper();
+                let enable_graphics_offload = sw_clone.is_enable_graphics_offload();
+                app_clone.build_ui(
+                    &config_clone,
+                    use_clapper,
+                    enable_graphics_offload,
+                    &renderers_clone,
+                    launch_mode,
+                );
             }),
         );
 
         let renderers_activate = renderers.clone();
         app.connect_activate(move |app| {
-            app.build_ui(&config, is_use_clapper, &renderers_activate, launch_mode)
+            let use_clapper = settings_watcher.is_use_clapper();
+            let enable_graphics_offload = settings_watcher.is_enable_graphics_offload();
+            app.build_ui(
+                &config,
+                use_clapper,
+                enable_graphics_offload,
+                &renderers_activate,
+                launch_mode,
+            )
         });
         app.run();
     }

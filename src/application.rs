@@ -54,6 +54,7 @@ impl HotaruApplication {
         &self,
         config: &WallpaperConfig,
         use_clapper: bool,
+        enable_graphics_offload: bool,
         renderers: &Rc<RefCell<Vec<Renderer>>>,
         launch_mode: LaunchMode,
     ) {
@@ -87,12 +88,18 @@ impl HotaruApplication {
                 window.set_size_request(*window_width, *window_height);
                 window.set_title(Some(window_title));
                 let renderer = match wallpaper_source {
-                    WallpaperSource::Filepath { filepath } => {
-                        Renderer::with_filepath(filepath, wallpaper_type, use_clapper)
-                    }
-                    WallpaperSource::Uri { uri } => {
-                        Renderer::with_uri(uri, wallpaper_type, use_clapper)
-                    }
+                    WallpaperSource::Filepath { filepath } => Renderer::with_filepath(
+                        filepath,
+                        wallpaper_type,
+                        use_clapper,
+                        enable_graphics_offload,
+                    ),
+                    WallpaperSource::Uri { uri } => Renderer::with_uri(
+                        uri,
+                        wallpaper_type,
+                        use_clapper,
+                        enable_graphics_offload,
+                    ),
                 };
                 window.set_child(Some(renderer.widget()));
                 window.present();
@@ -120,7 +127,7 @@ impl HotaruApplication {
                 window.set_size_request(*window_width, *window_height);
                 window.set_title(Some(window_title));
                 if let Some(primary_widget) = primary_widgets.get(clone_source) {
-                    let widget = primary_widget.mirror();
+                    let widget = primary_widget.mirror(enable_graphics_offload);
                     window.set_child(Some(&widget));
                 }
                 window.present();

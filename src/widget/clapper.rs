@@ -17,6 +17,7 @@
 
 use glib::Object;
 use gtk::{gio, glib, prelude::*};
+use tracing::info;
 
 use super::{RendererWidget, RendererWidgetBuilder};
 
@@ -38,7 +39,7 @@ impl RendererWidgetBuilder for ClapperWidget {
 }
 
 impl RendererWidget for ClapperWidget {
-    fn mirror(&self) -> gtk::Box {
+    fn mirror(&self, enable_graphics_offload: bool) -> gtk::Box {
         let widget = gtk::Box::builder().build();
         let paintable = self.paintable().unwrap();
         let picture = gtk::Picture::builder()
@@ -49,13 +50,16 @@ impl RendererWidget for ClapperWidget {
             .build();
 
         #[cfg(feature = "gtk_v4_14")]
-        {
+        if enable_graphics_offload {
             let offload = gtk::GraphicsOffload::new(Some(&picture));
             offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
             widget.append(&offload);
+        } else {
+            widget.append(&picture);
         }
         #[cfg(not(feature = "gtk_v4_14"))]
         {
+            let _ = enable_graphics_offload;
             widget.append(&picture);
         }
         widget
@@ -124,6 +128,7 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
+            info!("Using Clapper for video rendering");
             let obj = self.obj();
             let sink = gst::ElementFactory::make("clappersink").build().unwrap();
             let renderer;

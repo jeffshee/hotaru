@@ -22,13 +22,6 @@
 			<description>How the wallpaper fits in the window (0: Fill, 1: Contain, 2: Cover, 3: Scale-down)</description>
 		</key>
 
-		<!-- Debug -->
-		<key name="debug-mode" type="b">
-			<default>false</default>
-			<summary>Debug mode</summary>
-			<description>Enable debug logging</description>
-		</key>
-
 		<!-- Hardware acceleration (read at startup) -->
 		<key name="enable-va" type="b">
 			<default>false</default>
@@ -40,10 +33,10 @@
 			<summary>Enable NVIDIA stateless decoders</summary>
 			<description>Enable NVIDIA stateless decoders for improved hardware acceleration</description>
 		</key>
-		<key name="force-gtk4paintablesink" type="b">
-			<default>false</default>
-			<summary>Force gtk4paintablesink</summary>
-			<description>Force gtk4paintablesink as the video renderer</description>
+		<key name="use-clapper" type="b">
+			<default>true</default>
+			<summary>Use Clapper</summary>
+			<description>Use Clapper for video playback. When disabled, GStreamer is used instead.</description>
 		</key>
 		<key name="enable-graphics-offload" type="b">
 			<default>false</default>
@@ -51,13 +44,6 @@
 			<description>Enable graphics offload (requires GTK 4.14+)</description>
 		</key>
 
-		<!-- Startup -->
-		<key name="startup-delay" type="i">
-			<default>1000</default>
-			<range min="0" max="10000"/>
-			<summary>Startup delay</summary>
-			<description>Startup delay in milliseconds for compatibility</description>
-		</key>
 		<!-- Last applied wallpaper (for auto-restore on daemon startup) -->
 		<key name="last-wallpaper-config" type="s">
 			<default>''</default>

@@ -17,8 +17,9 @@
 
 use glib::Object;
 use gtk::{gio, glib, prelude::*};
+use tracing::info;
 
-use super::{RendererWidget, RendererWidgetBuilder};
+use super::RendererWidget;
 
 glib::wrapper! {
     pub struct GstGtk4Widget(ObjectSubclass<imp::GstGtk4Widget>)
@@ -26,19 +27,22 @@ glib::wrapper! {
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
-impl RendererWidgetBuilder for GstGtk4Widget {
-    fn with_filepath(filepath: &str) -> Self {
+impl GstGtk4Widget {
+    pub fn with_filepath(filepath: &str, enable_graphics_offload: bool) -> Self {
         let uri = gio::File::for_path(filepath).uri();
-        Self::with_uri(&uri)
+        Self::with_uri(&uri, enable_graphics_offload)
     }
 
-    fn with_uri(uri: &str) -> Self {
-        Object::builder().property("uri", uri).build()
+    pub fn with_uri(uri: &str, enable_graphics_offload: bool) -> Self {
+        Object::builder()
+            .property("uri", uri)
+            .property("enable-graphics-offload", enable_graphics_offload)
+            .build()
     }
 }
 
 impl RendererWidget for GstGtk4Widget {
-    fn mirror(&self) -> gtk::Box {
+    fn mirror(&self, enable_graphics_offload: bool) -> gtk::Box {
         let widget = gtk::Box::builder().build();
         let paintable = self.paintable().unwrap();
         let picture = gtk::Picture::builder()
@@ -49,13 +53,16 @@ impl RendererWidget for GstGtk4Widget {
             .build();
 
         #[cfg(feature = "gtk_v4_14")]
-        {
+        if enable_graphics_offload {
             let offload = gtk::GraphicsOffload::new(Some(&picture));
             offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
             widget.append(&offload);
+        } else {
+            widget.append(&picture);
         }
         #[cfg(not(feature = "gtk_v4_14"))]
         {
+            let _ = enable_graphics_offload;
             widget.append(&picture);
         }
         widget
@@ -89,7 +96,7 @@ impl RendererWidget for GstGtk4Widget {
 mod imp {
     use super::*;
 
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     use glib::Properties;
     use gtk::{gdk, subclass::prelude::*};
@@ -100,6 +107,8 @@ mod imp {
     pub struct GstGtk4Widget {
         #[property(get, set)]
         uri: RefCell<String>,
+        #[property(get, set, construct_only, name = "enable-graphics-offload")]
+        enable_graphics_offload: Cell<bool>,
         sink: RefCell<Option<gst::Element>>,
         renderer: RefCell<Option<gst_play::PlayVideoOverlayVideoRenderer>>,
         #[property(get)]
@@ -124,6 +133,7 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
+            info!("Using GStreamer for video rendering");
             let obj = self.obj();
             let sink = gst::ElementFactory::make("gtk4paintablesink")
                 .build()
@@ -139,10 +149,12 @@ mod imp {
                 .build();
 
             #[cfg(feature = "gtk_v4_14")]
-            {
+            if self.enable_graphics_offload.get() {
                 let offload = gtk::GraphicsOffload::new(Some(&picture));
                 offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
                 obj.append(&offload);
+            } else {
+                obj.append(&picture);
             }
             #[cfg(not(feature = "gtk_v4_14"))]
             {

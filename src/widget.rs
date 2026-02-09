@@ -35,7 +35,7 @@ pub trait RendererWidgetBuilder {
 
 #[enum_dispatch]
 pub trait RendererWidget: AsRef<Widget> {
-    fn mirror(&self) -> gtk::Box;
+    fn mirror(&self, enable_graphics_offload: bool) -> gtk::Box;
     fn play(&self);
     fn pause(&self);
     fn stop(&self);
@@ -61,26 +61,35 @@ impl Renderer {
         filepath: &str,
         wallpaper_type: &WallpaperType,
         use_clapper: bool,
+        enable_graphics_offload: bool,
     ) -> Self {
         match wallpaper_type {
             WallpaperType::Video => {
                 if use_clapper {
                     Self::Clapper(ClapperWidget::with_filepath(filepath))
                 } else {
-                    Self::GstGtk4(GstGtk4Widget::with_filepath(filepath))
+                    Self::GstGtk4(GstGtk4Widget::with_filepath(
+                        filepath,
+                        enable_graphics_offload,
+                    ))
                 }
             }
             WallpaperType::Web => Self::Web(WebWidget::with_filepath(filepath)),
         }
     }
 
-    pub fn with_uri(uri: &str, wallpaper_type: &WallpaperType, use_clapper: bool) -> Self {
+    pub fn with_uri(
+        uri: &str,
+        wallpaper_type: &WallpaperType,
+        use_clapper: bool,
+        enable_graphics_offload: bool,
+    ) -> Self {
         match wallpaper_type {
             WallpaperType::Video => {
                 if use_clapper {
                     Self::Clapper(ClapperWidget::with_uri(uri))
                 } else {
-                    Self::GstGtk4(GstGtk4Widget::with_uri(uri))
+                    Self::GstGtk4(GstGtk4Widget::with_uri(uri, enable_graphics_offload))
                 }
             }
             WallpaperType::Web => Self::Web(WebWidget::with_uri(uri)),
