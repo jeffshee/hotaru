@@ -40,15 +40,6 @@ impl SettingsWatcher {
         &self.settings
     }
 
-    /// Read startup-only settings (these require a daemon restart to take effect).
-    pub fn is_enable_va(&self) -> bool {
-        self.settings.boolean("enable-va")
-    }
-
-    pub fn is_enable_nvsl(&self) -> bool {
-        self.settings.boolean("enable-nvsl")
-    }
-
     pub fn is_use_clapper(&self) -> bool {
         self.settings.boolean("use-clapper")
     }

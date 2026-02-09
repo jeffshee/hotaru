@@ -21,7 +21,6 @@ pub mod dbus;
 pub mod model;
 pub mod monitor_tracker;
 pub mod settings_watcher;
-pub mod utils;
 pub mod widget;
 pub mod window;
 
@@ -32,5 +31,4 @@ pub mod prelude {
         LaunchMode, MonitorInfo, MonitorListModelExt, MonitorMap, WallpaperConfig,
     };
     pub use crate::monitor_tracker::MonitorTracker;
-    pub use crate::utils::setup_gst;
 }

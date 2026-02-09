@@ -46,13 +46,6 @@ fn main() -> anyhow::Result<()> {
     gst::init().unwrap();
     gtk::init().unwrap();
 
-    // Read GSettings for startup-only settings
-    let settings_watcher = hotaru::settings_watcher::SettingsWatcher::new();
-    setup_gst(
-        settings_watcher.is_enable_va(),
-        settings_watcher.is_enable_nvsl(),
-    );
-
     let mut app_flags = ApplicationFlags::HANDLES_COMMAND_LINE;
     if cli.daemon {
         // In daemon mode, prevent GApplication from claiming the bus name
@@ -129,6 +122,7 @@ fn main() -> anyhow::Result<()> {
         glib::MainLoop::new(None, false).run();
     } else {
         // Standalone mode: read config file and run immediately
+        let settings_watcher = hotaru::settings_watcher::SettingsWatcher::new();
         let launch_mode = cli.launch_mode;
 
         // Handle XWayland fallback for X11Desktop mode
