@@ -18,6 +18,7 @@
 use gdk_x11::X11Surface;
 use glib::Object;
 use gtk::{gio, glib, prelude::*};
+use gtk4_layer_shell::LayerShell;
 use tracing::{debug, error};
 use x11rb::{
     connection::Connection,
@@ -196,7 +197,32 @@ mod imp {
                     });
                 }
                 LAUNCH_MODE_WAYLAND_LAYER_SHELL => {
-                    todo!()
+                    obj.init_layer_shell();
+                    obj.set_layer(gtk4_layer_shell::Layer::Background);
+                    obj.set_anchor(gtk4_layer_shell::Edge::Left, true);
+                    obj.set_anchor(gtk4_layer_shell::Edge::Right, true);
+                    obj.set_anchor(gtk4_layer_shell::Edge::Top, true);
+                    obj.set_anchor(gtk4_layer_shell::Edge::Bottom, true);
+                    obj.set_exclusive_zone(-1);
+                    obj.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::None);
+                    obj.set_namespace(Some("hidamari"));
+
+                    // Target specific monitor by matching position
+                    let position = obj.position();
+                    let display = Display::default().expect("Could not connect to a display");
+                    let monitors = display.monitors();
+                    for i in 0..monitors.n_items() {
+                        if let Some(monitor) = monitors
+                            .item(i)
+                            .and_then(|o| o.downcast::<gtk::gdk::Monitor>().ok())
+                        {
+                            let geom = monitor.geometry();
+                            if geom.x() == position.x && geom.y() == position.y {
+                                obj.set_monitor(Some(&monitor));
+                                break;
+                            }
+                        }
+                    }
                 }
                 LAUNCH_MODE_GNOME_EXT_HANABI => {
                     obj.connect_realize(move |window| {
@@ -234,6 +260,9 @@ mod imp {
                     }
                     LAUNCH_MODE_GNOME_EXT_HANABI => {
                         window.set_hanabi_window_title();
+                    }
+                    LAUNCH_MODE_WAYLAND_LAYER_SHELL | LAUNCH_MODE_WINDOWED => {
+                        // No position updates needed
                     }
                     launch_mode => {
                         error!("Unknown launch mode: {}", launch_mode);
