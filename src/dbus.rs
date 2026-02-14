@@ -124,10 +124,12 @@ impl RendererState {
         // Build new UI
         let use_clapper = self.settings_watcher.is_use_clapper();
         let enable_graphics_offload = self.settings_watcher.is_enable_graphics_offload();
+        let fit = self.settings_watcher.content_fit();
         self.app.build_ui(
             &config,
             use_clapper,
             enable_graphics_offload,
+            fit,
             &self.renderers,
             launch_mode,
         );
@@ -138,7 +140,6 @@ impl RendererState {
         // the main loop. An idle callback runs after the transition completes.
         let volume = self.settings_watcher.volume();
         let mute = self.settings_watcher.is_mute();
-        let fit = self.settings_watcher.content_fit();
         let renderers = self.renderers.clone();
         glib::idle_add_local_once(move || {
             for renderer in renderers.borrow().iter() {

@@ -35,7 +35,7 @@ pub trait RendererWidgetBuilder {
 
 #[enum_dispatch]
 pub trait RendererWidget: AsRef<Widget> {
-    fn mirror(&self, enable_graphics_offload: bool) -> gtk::Box;
+    fn mirror(&self, enable_graphics_offload: bool, content_fit: gtk::ContentFit) -> gtk::Box;
     fn play(&self);
     fn pause(&self);
     fn stop(&self);

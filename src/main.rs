@@ -88,22 +88,22 @@ fn main() -> anyhow::Result<()> {
                     let enable_graphics_offload = state_for_monitor
                         .settings_watcher
                         .is_enable_graphics_offload();
+                    let fit = state_for_monitor.settings_watcher.content_fit();
                     state_for_monitor.app.build_ui(
                         config,
                         use_clapper,
                         enable_graphics_offload,
+                        fit,
                         &state_for_monitor.renderers,
                         launch_mode,
                     );
                     let volume = state_for_monitor.settings_watcher.volume();
                     let mute = state_for_monitor.settings_watcher.is_mute();
-                    let fit = state_for_monitor.settings_watcher.content_fit();
                     let renderers = state_for_monitor.renderers.clone();
                     glib::idle_add_local_once(move || {
                         for renderer in renderers.borrow().iter() {
                             renderer.set_volume(volume);
                             renderer.set_mute(mute);
-                            renderer.set_content_fit(fit);
                         }
                     });
                 }
@@ -163,10 +163,12 @@ fn main() -> anyhow::Result<()> {
                 app_clone.windows().into_iter().for_each(|w| w.close());
                 let use_clapper = sw_clone.is_use_clapper();
                 let enable_graphics_offload = sw_clone.is_enable_graphics_offload();
+                let content_fit = sw_clone.content_fit();
                 app_clone.build_ui(
                     &config_clone,
                     use_clapper,
                     enable_graphics_offload,
+                    content_fit,
                     &renderers_clone,
                     launch_mode,
                 );
@@ -177,10 +179,12 @@ fn main() -> anyhow::Result<()> {
         app.connect_activate(move |app| {
             let use_clapper = settings_watcher.is_use_clapper();
             let enable_graphics_offload = settings_watcher.is_enable_graphics_offload();
+            let content_fit = settings_watcher.content_fit();
             app.build_ui(
                 &config,
                 use_clapper,
                 enable_graphics_offload,
+                content_fit,
                 &renderers_activate,
                 launch_mode,
             )

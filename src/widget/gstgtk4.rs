@@ -42,14 +42,17 @@ impl GstGtk4Widget {
 }
 
 impl RendererWidget for GstGtk4Widget {
-    fn mirror(&self, enable_graphics_offload: bool) -> gtk::Box {
+    fn mirror(&self, enable_graphics_offload: bool, content_fit: gtk::ContentFit) -> gtk::Box {
         let widget = gtk::Box::builder().build();
         let paintable = self.paintable().unwrap();
         let picture = gtk::Picture::builder()
             .paintable(&paintable)
             .hexpand(true)
             .vexpand(true)
-            .content_fit(self.picture().content_fit())
+            .content_fit(content_fit)
+            .build();
+        self.picture()
+            .bind_property("content-fit", &picture, "content-fit")
             .build();
 
         #[cfg(feature = "gtk_v4_14")]

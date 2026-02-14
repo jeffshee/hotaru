@@ -55,6 +55,7 @@ impl HotaruApplication {
         config: &WallpaperConfig,
         use_clapper: bool,
         enable_graphics_offload: bool,
+        content_fit: gtk::ContentFit,
         renderers: &Rc<RefCell<Vec<Renderer>>>,
         launch_mode: LaunchMode,
     ) {
@@ -127,7 +128,7 @@ impl HotaruApplication {
                 window.set_size_request(*window_width, *window_height);
                 window.set_title(Some(window_title));
                 if let Some(primary_widget) = primary_widgets.get(clone_source) {
-                    let widget = primary_widget.mirror(enable_graphics_offload);
+                    let widget = primary_widget.mirror(enable_graphics_offload, content_fit);
                     window.set_child(Some(&widget));
                 }
                 window.present();

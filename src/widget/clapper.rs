@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use glib::Object;
-use gtk::{gio, glib, prelude::*};
+use gtk::{gio, glib, prelude::*, subclass::prelude::*};
 use tracing::info;
 
 use super::{RendererWidget, RendererWidgetBuilder};
@@ -39,14 +39,17 @@ impl RendererWidgetBuilder for ClapperWidget {
 }
 
 impl RendererWidget for ClapperWidget {
-    fn mirror(&self, enable_graphics_offload: bool) -> gtk::Box {
+    fn mirror(&self, enable_graphics_offload: bool, content_fit: gtk::ContentFit) -> gtk::Box {
         let widget = gtk::Box::builder().build();
         let paintable = self.paintable().unwrap();
         let picture = gtk::Picture::builder()
             .paintable(&paintable)
             .hexpand(true)
             .vexpand(true)
-            .content_fit(self.picture().content_fit())
+            .content_fit(content_fit)
+            .build();
+        self.picture()
+            .bind_property("content-fit", &picture, "content-fit")
             .build();
 
         #[cfg(feature = "gtk_v4_14")]
@@ -86,6 +89,7 @@ impl RendererWidget for ClapperWidget {
     }
 
     fn set_content_fit(&self, fit: gtk::ContentFit) {
+        self.imp().content_fit.set(Some(fit));
         self.picture().set_content_fit(fit);
     }
 }
@@ -93,10 +97,10 @@ impl RendererWidget for ClapperWidget {
 mod imp {
     use super::*;
 
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     use glib::Properties;
-    use gtk::{gdk, subclass::prelude::*};
+    use gtk::gdk;
     use tracing::{debug, error, warn};
 
     #[derive(Properties, Default)]
@@ -114,6 +118,7 @@ mod imp {
         paintable: RefCell<Option<gdk::Paintable>>,
         #[property(get)]
         picture: RefCell<gtk::Picture>,
+        pub(super) content_fit: Cell<Option<gtk::ContentFit>>,
     }
 
     #[glib::object_subclass]
@@ -162,9 +167,25 @@ mod imp {
                 adapter.play().seek(gst::ClockTime::from_seconds(0));
             });
 
-            adapter.connect_state_changed(move |_adapter, playstate| {
-                debug!("{}", playstate);
-            });
+            // Unlike GstGtk4 which owns its own Picture, Clapper's Picture
+            // is managed by clappersink and may have its content-fit reset
+            // during async pipeline state transitions. Re-apply on every
+            // state change to ensure the user's setting persists.
+            adapter.connect_closure(
+                "state-changed",
+                false,
+                glib::closure_local!(
+                    #[weak]
+                    obj,
+                    move |_adapter: gst_play::PlaySignalAdapter, playstate: gst_play::PlayState| {
+                        debug!("{}", playstate);
+                        let imp = obj.imp();
+                        if let Some(fit) = imp.content_fit.get() {
+                            imp.picture.borrow().set_content_fit(fit);
+                        }
+                    }
+                ),
+            );
 
             adapter.connect_warning(move |_adapter, error, _structure| {
                 warn!("{}", error);
