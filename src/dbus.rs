@@ -132,9 +132,21 @@ impl RendererState {
             launch_mode,
         );
 
-        // Apply current settings to new renderers
-        self.settings_watcher
-            .apply_to_renderers(&self.renderers.borrow());
+        // Defer settings application to avoid GStreamer deadlock.
+        // build_ui() starts pipeline state transitions via renderer.play(),
+        // and setting properties (volume, mute) during the transition blocks
+        // the main loop. An idle callback runs after the transition completes.
+        let volume = self.settings_watcher.volume();
+        let mute = self.settings_watcher.is_mute();
+        let fit = self.settings_watcher.content_fit();
+        let renderers = self.renderers.clone();
+        glib::idle_add_local_once(move || {
+            for renderer in renderers.borrow().iter() {
+                renderer.set_volume(volume);
+                renderer.set_mute(mute);
+                renderer.set_content_fit(fit);
+            }
+        });
 
         *self.playback_state.borrow_mut() = PlaybackState::Playing;
 

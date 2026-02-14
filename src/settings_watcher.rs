@@ -115,19 +115,6 @@ impl SettingsWatcher {
     pub fn set_last_launch_mode(&self, value: &str) {
         self.settings.set_string("last-launch-mode", value).ok();
     }
-
-    /// Apply current settings to all active renderers (e.g., after applying a new wallpaper).
-    pub fn apply_to_renderers(&self, renderers: &[Renderer]) {
-        let volume = self.volume();
-        let mute = self.is_mute();
-        let fit = self.content_fit();
-
-        for renderer in renderers {
-            renderer.set_volume(volume);
-            renderer.set_mute(mute);
-            renderer.set_content_fit(fit);
-        }
-    }
 }
 
 fn content_fit_from_int(value: i32) -> gtk::ContentFit {

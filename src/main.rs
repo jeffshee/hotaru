@@ -31,6 +31,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt
 
 use hotaru::dbus::{register_dbus_service, RendererState};
 use hotaru::prelude::*;
+use hotaru::widget::RendererWidget;
 
 use crate::cli::Cli;
 
@@ -94,9 +95,17 @@ fn main() -> anyhow::Result<()> {
                         &state_for_monitor.renderers,
                         launch_mode,
                     );
-                    state_for_monitor
-                        .settings_watcher
-                        .apply_to_renderers(&state_for_monitor.renderers.borrow());
+                    let volume = state_for_monitor.settings_watcher.volume();
+                    let mute = state_for_monitor.settings_watcher.is_mute();
+                    let fit = state_for_monitor.settings_watcher.content_fit();
+                    let renderers = state_for_monitor.renderers.clone();
+                    glib::idle_add_local_once(move || {
+                        for renderer in renderers.borrow().iter() {
+                            renderer.set_volume(volume);
+                            renderer.set_mute(mute);
+                            renderer.set_content_fit(fit);
+                        }
+                    });
                 }
             }),
         );
