@@ -29,7 +29,7 @@ use x11rb::{
 use crate::{
     application::HotaruApplication,
     constant::WINDOW_TITLE,
-    model::{HanabiWindowParams, LaunchMode},
+    model::{HanabiWindowParams, LaunchMode, MonitorListModelExt as _},
 };
 
 glib::wrapper! {
@@ -160,6 +160,8 @@ mod imp {
         #[property(get, construct_only)]
         launch_mode: RefCell<String>,
         #[property(get, set)]
+        monitor_connector: RefCell<String>,
+        #[property(get, set)]
         position: RefCell<Position>,
     }
 
@@ -207,19 +209,13 @@ mod imp {
                     obj.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::None);
                     obj.set_namespace(Some("hidamari-layer-shell"));
 
-                    // Target specific monitor by matching position
                     obj.connect_realize(move |window| {
-                        let position = window.position();
+                        let connector = window.monitor_connector();
                         let display = Display::default().expect("Could not connect to a display");
-                        let monitors = display.monitors();
-                        for i in 0..monitors.n_items() {
-                            if let Some(monitor) = monitors
-                                .item(i)
-                                .and_then(|o| o.downcast::<gtk::gdk::Monitor>().ok())
-                            {
-                                let geom = monitor.geometry();
-                                if geom.x() == position.x && geom.y() == position.y {
-                                    window.set_monitor(Some(&monitor));
+                        if let Ok(monitors) = display.monitors().try_to_monitor_vec() {
+                            for monitor in &monitors {
+                                if monitor.connector().as_deref() == Some(&connector) {
+                                    window.set_monitor(Some(monitor));
                                     break;
                                 }
                             }

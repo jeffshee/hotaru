@@ -83,6 +83,7 @@ impl HotaruApplication {
             } = window_info
             {
                 let window = HotaruApplicationWindow::new(self, launch_mode);
+                window.set_monitor_connector(monitor.as_str());
                 window.set_position(Position {
                     x: *window_x,
                     y: *window_y,
@@ -116,7 +117,7 @@ impl HotaruApplication {
 
         layout.windows.iter().for_each(|window_info| {
             if let WindowInfo::Clone {
-                monitor: _,
+                monitor,
                 window_x,
                 window_y,
                 window_width,
@@ -127,6 +128,7 @@ impl HotaruApplication {
             } = window_info
             {
                 let window = HotaruApplicationWindow::new(self, launch_mode);
+                window.set_monitor_connector(monitor.as_str());
                 window.set_position(Position {
                     x: *window_x,
                     y: *window_y,

@@ -181,9 +181,13 @@ impl WindowLayout {
         // Calculate bounding box of all monitors
         let (box_width, box_height) = monitor_map.values().fold(
             (0, 0),
-            |acc, MonitorInfo { x, y, width, height }| {
-                (acc.0.max(*x + *width), acc.1.max(*y + *height))
-            },
+            |acc,
+             MonitorInfo {
+                 x,
+                 y,
+                 width,
+                 height,
+             }| { (acc.0.max(*x + *width), acc.1.max(*y + *height)) },
         );
 
         let (wallpaper_type, wallpaper_source) = match config.monitors.first() {
