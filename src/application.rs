@@ -23,8 +23,8 @@ use tracing::{info, warn};
 
 use crate::{
     model::{
-        LaunchMode, MonitorListModelExt as _, WallpaperConfig, WallpaperSource, WindowInfo,
-        WindowLayout,
+        LaunchMode, MonitorListModelExt as _, Viewport, WallpaperConfig, WallpaperSource,
+        WindowInfo, WindowLayout,
     },
     monitor_tracker::MonitorTracker,
     widget::{Renderer, RendererWidget},
@@ -79,6 +79,7 @@ impl HotaruApplication {
                 window_title,
                 wallpaper_type,
                 wallpaper_source,
+                viewport,
             } = window_info
             {
                 let window = HotaruApplicationWindow::new(self, launch_mode);
@@ -102,7 +103,11 @@ impl HotaruApplication {
                         enable_graphics_offload,
                     ),
                 };
-                window.set_child(Some(renderer.widget()));
+                if let Some(viewport) = viewport {
+                    window.set_child(Some(&wrap_with_viewport(renderer.widget(), viewport)));
+                } else {
+                    window.set_child(Some(renderer.widget()));
+                }
                 window.present();
                 renderer.play();
                 primary_widgets.insert(monitor.to_string(), renderer);
@@ -118,6 +123,7 @@ impl HotaruApplication {
                 window_height,
                 window_title,
                 clone_source,
+                viewport,
             } = window_info
             {
                 let window = HotaruApplicationWindow::new(self, launch_mode);
@@ -129,7 +135,11 @@ impl HotaruApplication {
                 window.set_title(Some(window_title));
                 if let Some(primary_widget) = primary_widgets.get(clone_source) {
                     let widget = primary_widget.mirror(enable_graphics_offload, content_fit);
-                    window.set_child(Some(&widget));
+                    if let Some(viewport) = viewport {
+                        window.set_child(Some(&wrap_with_viewport(widget.upcast_ref(), viewport)));
+                    } else {
+                        window.set_child(Some(&widget));
+                    }
                 }
                 window.present();
             }
@@ -140,6 +150,18 @@ impl HotaruApplication {
         shared.clear();
         shared.extend(primary_widgets.into_values());
     }
+}
+
+/// Wrap a widget in a `gtk::Fixed` container that shows only the portion
+/// of the canvas visible through this monitor's viewport. The child is
+/// sized to the full canvas and positioned at a negative offset so the
+/// monitor's region is the only visible part.
+fn wrap_with_viewport(child: &gtk::Widget, viewport: &Viewport) -> gtk::Fixed {
+    let fixed = gtk::Fixed::new();
+    fixed.set_overflow(gtk::Overflow::Hidden);
+    child.set_size_request(viewport.canvas_width, viewport.canvas_height);
+    fixed.put(child, -viewport.offset_x as f64, -viewport.offset_y as f64);
+    fixed
 }
 
 /// If the current display is not X11, set `GDK_BACKEND=x11` and re-exec

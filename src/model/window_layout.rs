@@ -28,6 +28,14 @@ pub struct WindowLayout {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Viewport {
+    pub offset_x: i32,
+    pub offset_y: i32,
+    pub canvas_width: i32,
+    pub canvas_height: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum WindowInfo {
     Primary {
@@ -39,6 +47,7 @@ pub enum WindowInfo {
         window_title: String,
         wallpaper_type: WallpaperType,
         wallpaper_source: WallpaperSource,
+        viewport: Option<Viewport>,
     },
     Clone {
         monitor: String,
@@ -48,6 +57,7 @@ pub enum WindowInfo {
         window_height: i32,
         window_title: String,
         clone_source: String,
+        viewport: Option<Viewport>,
     },
 }
 
@@ -88,6 +98,7 @@ impl WindowLayout {
                         window_title: format!("Live Wallpaper - {monitor}"),
                         wallpaper_type: *wallpaper_type,
                         wallpaper_source: wallpaper_source.clone(),
+                        viewport: None,
                     })
                 }
             }
@@ -128,6 +139,7 @@ impl WindowLayout {
                     window_title: format!("Live Wallpaper - {monitor}"),
                     wallpaper_type: *wallpaper_type,
                     wallpaper_source: wallpaper_source.clone(),
+                    viewport: None,
                 })
             }
         }
@@ -153,6 +165,7 @@ impl WindowLayout {
                                 "Live Wallpaper - {monitor} (Clone of {primary_monitor})"
                             ),
                             clone_source: primary_monitor.clone(),
+                            viewport: None,
                         })
                     }
                 }
@@ -165,34 +178,64 @@ impl WindowLayout {
     fn handle_stretch_single(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
         let mut windows = Vec::new();
 
-        // Calculate bounding box, given the leftmost rect has x == 0 and the topmost rect has y == 0
+        // Calculate bounding box of all monitors
         let (box_width, box_height) = monitor_map.values().fold(
             (0, 0),
-            |acc,
-             MonitorInfo {
-                 x,
-                 y,
-                 width,
-                 height,
-             }| { (acc.0.max(*x + *width), acc.1.max(*y + *height)) },
+            |acc, MonitorInfo { x, y, width, height }| {
+                (acc.0.max(*x + *width), acc.1.max(*y + *height))
+            },
         );
 
-        if let Some(MonitorConfig::Primary {
-            wallpaper_type,
-            wallpaper_source,
-            ..
-        }) = config.monitors.first()
-        {
-            windows.push(WindowInfo::Primary {
-                monitor: "STRETCH".to_string(),
-                window_x: 0,
-                window_y: 0,
-                window_width: box_width,
-                window_height: box_height,
-                window_title: "Live Wallpaper - STRETCH".to_string(),
-                wallpaper_type: *wallpaper_type,
-                wallpaper_source: wallpaper_source.clone(),
+        let (wallpaper_type, wallpaper_source) = match config.monitors.first() {
+            Some(MonitorConfig::Primary {
+                wallpaper_type,
+                wallpaper_source,
+                ..
+            }) => (*wallpaper_type, wallpaper_source.clone()),
+            _ => return Self { windows },
+        };
+
+        // Create one window per monitor. The first becomes Primary (renders
+        // the video), the rest become Clones (mirror the paintable). Each
+        // window carries a Viewport describing its offset within the canvas.
+        let mut monitors: Vec<_> = monitor_map.iter().collect();
+        monitors.sort_by_key(|(name, _)| (*name).clone());
+
+        let mut primary_name = None;
+
+        for (i, (monitor_name, info)) in monitors.iter().enumerate() {
+            let viewport = Some(Viewport {
+                offset_x: info.x,
+                offset_y: info.y,
+                canvas_width: box_width,
+                canvas_height: box_height,
             });
+
+            if i == 0 {
+                primary_name = Some(monitor_name.to_string());
+                windows.push(WindowInfo::Primary {
+                    monitor: monitor_name.to_string(),
+                    window_x: info.x,
+                    window_y: info.y,
+                    window_width: info.width,
+                    window_height: info.height,
+                    window_title: format!("Live Wallpaper - {} (Stretch)", monitor_name),
+                    wallpaper_type,
+                    wallpaper_source: wallpaper_source.clone(),
+                    viewport,
+                });
+            } else {
+                windows.push(WindowInfo::Clone {
+                    monitor: monitor_name.to_string(),
+                    window_x: info.x,
+                    window_y: info.y,
+                    window_width: info.width,
+                    window_height: info.height,
+                    window_title: format!("Live Wallpaper - {} (Stretch)", monitor_name),
+                    clone_source: primary_name.as_ref().unwrap().clone(),
+                    viewport,
+                });
+            }
         }
 
         Self { windows }
@@ -400,24 +443,52 @@ mod tests {
 
         let layout = WindowLayout::new(&config, &monitor_map);
 
-        assert_eq!(layout.windows.len(), 1);
+        // One window per monitor (sorted: DP-1, DP-2, eDP-1)
+        assert_eq!(layout.windows.len(), 3);
 
+        // Bounding box: 5920 x 2680
+        let expected_canvas = (5920, 2680);
+
+        // First monitor (DP-1) is Primary
         if let WindowInfo::Primary {
             monitor,
             window_x,
             window_y,
             window_width,
             window_height,
+            viewport,
             ..
         } = &layout.windows[0]
         {
-            assert_eq!(monitor, "STRETCH");
-            assert_eq!(*window_x, 0);
-            assert_eq!(*window_y, 0);
-            assert_eq!(*window_width, 5920);
-            assert_eq!(*window_height, 2680);
+            assert_eq!(monitor, "DP-1");
+            assert_eq!(*window_x, 1920);
+            assert_eq!(*window_y, 600);
+            assert_eq!(*window_width, 2560);
+            assert_eq!(*window_height, 1440);
+            let vp = viewport.as_ref().unwrap();
+            assert_eq!(vp.offset_x, 1920);
+            assert_eq!(vp.offset_y, 600);
+            assert_eq!(vp.canvas_width, expected_canvas.0);
+            assert_eq!(vp.canvas_height, expected_canvas.1);
         } else {
-            panic!("Expected primary window for stretch mode");
+            panic!("Expected primary window for first monitor");
+        }
+
+        // Remaining monitors are Clones
+        for window in &layout.windows[1..] {
+            if let WindowInfo::Clone {
+                clone_source,
+                viewport,
+                ..
+            } = window
+            {
+                assert_eq!(clone_source, "DP-1");
+                let vp = viewport.as_ref().unwrap();
+                assert_eq!(vp.canvas_width, expected_canvas.0);
+                assert_eq!(vp.canvas_height, expected_canvas.1);
+            } else {
+                panic!("Expected clone window for non-primary monitor");
+            }
         }
     }
 }
