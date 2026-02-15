@@ -30,6 +30,12 @@ pub struct SettingsWatcher {
     settings: gio::Settings,
 }
 
+impl Default for SettingsWatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SettingsWatcher {
     pub fn new() -> Self {
         let settings = gio::Settings::new(APPLICATION_ID);

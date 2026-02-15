@@ -263,7 +263,7 @@ impl RendererService {
         let result = reply_rx
             .recv()
             .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?
-            .map_err(|e| zbus::fdo::Error::Failed(e))?;
+            .map_err(zbus::fdo::Error::Failed)?;
 
         self.emit_state_changed().await;
         Ok(result)
