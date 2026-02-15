@@ -14,7 +14,7 @@ gst = { version = "0.24.4", package = "gstreamer" }
 gst-play = { version = "0.24.4", package = "gstreamer-play" }
 gst-plugin-gtk4 = "0.14.4"
 gst-video = { version = "0.24.4", package = "gstreamer-video" }
-gtk = { version = "0.10.3", package = "gtk4" }
+gtk = { version = "0.10.3", package = "gtk4", features = ["v4_14"] }
 gtk4-layer-shell = "0.7.1"
 once_cell = "1.21.3"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -30,10 +30,17 @@ x11rb = "0.13.2"
 zbus = "5.13.2"
 
 [features]
-default = ["dmabuf", "gtk_v4_14", "gst_v1_24"]
+default = [
+    "dmabuf",
+    "gst_v1_24",
+    "wayland",
+    "waylandegl",
+    "x11egl",
+    "x11glx",
+]
 dmabuf = ["gst-plugin-gtk4/dmabuf"]
-gtk_v4_14 = ["gst-plugin-gtk4/gtk_v4_14", "gtk/v4_14"]
-gst_v1_24 = ["gst/v1_24", "gst-video/v1_24"]
+gst_v1_24 = ["gst/v1_24", "gst-play/v1_24", "gst-video/v1_24"]
 wayland = ["gst-plugin-gtk4/wayland"]
+waylandegl = ["gst-plugin-gtk4/waylandegl"]
 x11egl = ["gst-plugin-gtk4/x11egl"]
 x11glx = ["gst-plugin-gtk4/x11glx"]

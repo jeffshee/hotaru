@@ -28,9 +28,9 @@
 			<description>Use Clapper for video playback. When disabled, GStreamer is used instead.</description>
 		</key>
 		<key name="enable-graphics-offload" type="b">
-			<default>false</default>
+			<default>true</default>
 			<summary>Enable graphics offload</summary>
-			<description>Enable graphics offload (requires GTK 4.14+)</description>
+			<description>Enable graphics offload</description>
 		</key>
 
 		<!-- Last applied wallpaper (for auto-restore on daemon startup) -->
