@@ -121,6 +121,42 @@ impl HotaruApplicationWindow {
         }
     }
 
+    /// Set `_GTK_FRAME_EXTENTS` to zero so Mutter does not draw a
+    /// compositor-side shadow around the window.
+    fn clear_x11_frame_extents(&self) {
+        debug!("clear_x11_frame_extents");
+        if let Some(surface) = self.surface() {
+            if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
+                let xid = x11_surface.xid();
+                let (conn, _screen_num) = x11rb::connect(None).unwrap();
+                let gtk_frame_extents = conn
+                    .intern_atom(false, b"_GTK_FRAME_EXTENTS")
+                    .unwrap()
+                    .reply()
+                    .unwrap()
+                    .atom;
+
+                let operation = move || {
+                    conn.change_property32(
+                        PropMode::REPLACE,
+                        xid as u32,
+                        gtk_frame_extents,
+                        AtomEnum::CARDINAL,
+                        &[0, 0, 0, 0],
+                    )
+                    .and_then(|_| conn.flush())
+                    .unwrap_or_else(|e| error!("Failed to clear frame extents: {}", e));
+                };
+                if self.is_mapped() {
+                    operation();
+                }
+                self.connect_map(move |_window| {
+                    operation();
+                });
+            }
+        }
+    }
+
     fn set_hanabi_window_title(&self) {
         let position = self.position();
         let params = HanabiWindowParams {
@@ -194,6 +230,7 @@ mod imp {
                 LAUNCH_MODE_X11_DESKTOP => {
                     obj.connect_realize(move |window| {
                         window.set_x11_window_type_hint();
+                        window.clear_x11_frame_extents();
                         let position = window.position();
                         window.set_x11_window_position(position.x, position.y);
                     });
