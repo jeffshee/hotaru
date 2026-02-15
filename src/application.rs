@@ -19,7 +19,7 @@ use std::{cell::RefCell, collections::HashMap, env, os::unix::process::CommandEx
 
 use glib::Object;
 use gtk::{gdk::Display, gio, glib, glib::Type, prelude::*};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     model::{
@@ -27,7 +27,7 @@ use crate::{
         WindowInfo, WindowLayout,
     },
     monitor_tracker::MonitorTracker,
-    widget::{Renderer, RendererWidget},
+    widget::{Renderer, RendererWidget, ClipBox},
     window::{HotaruApplicationWindow, Position},
 };
 
@@ -89,6 +89,7 @@ impl HotaruApplication {
                     y: *window_y,
                 });
                 window.set_size_request(*window_width, *window_height);
+                debug!("window size request: {}x{}", window_width, window_height);
                 window.set_title(Some(window_title));
                 let renderer = match wallpaper_source {
                     WallpaperSource::Filepath { filepath } => Renderer::with_filepath(
@@ -105,7 +106,12 @@ impl HotaruApplication {
                     ),
                 };
                 if let Some(viewport) = viewport {
-                    window.set_child(Some(&wrap_with_viewport(renderer.widget(), viewport)));
+                    window.set_child(Some(&wrap_with_viewport(
+                        renderer.widget(),
+                        *window_width,
+                        *window_height,
+                        viewport,
+                    )));
                 } else {
                     window.set_child(Some(renderer.widget()));
                 }
@@ -134,11 +140,17 @@ impl HotaruApplication {
                     y: *window_y,
                 });
                 window.set_size_request(*window_width, *window_height);
+                debug!("window size request: {}x{}", window_width, window_height);
                 window.set_title(Some(window_title));
                 if let Some(primary_widget) = primary_widgets.get(clone_source) {
                     let widget = primary_widget.mirror(enable_graphics_offload, content_fit);
                     if let Some(viewport) = viewport {
-                        window.set_child(Some(&wrap_with_viewport(widget.upcast_ref(), viewport)));
+                        window.set_child(Some(&wrap_with_viewport(
+                            widget.upcast_ref(),
+                            *window_width,
+                            *window_height,
+                            viewport,
+                        )));
                     } else {
                         window.set_child(Some(&widget));
                     }
@@ -154,16 +166,36 @@ impl HotaruApplication {
     }
 }
 
-/// Wrap a widget in a `gtk::Fixed` container that shows only the portion
-/// of the canvas visible through this monitor's viewport. The child is
-/// sized to the full canvas and positioned at a negative offset so the
-/// monitor's region is the only visible part.
-fn wrap_with_viewport(child: &gtk::Widget, viewport: &Viewport) -> gtk::Fixed {
-    let fixed = gtk::Fixed::new();
-    fixed.set_overflow(gtk::Overflow::Hidden);
-    child.set_size_request(viewport.canvas_width, viewport.canvas_height);
-    fixed.put(child, -viewport.offset_x as f64, -viewport.offset_y as f64);
-    fixed
+/// Wrap a widget so that only the portion visible through this monitor's
+/// viewport is shown. The child is allocated at full canvas size and
+/// translated by the viewport offset; rendering is clipped to the
+/// window dimensions so the oversized child does not inflate the window.
+fn wrap_with_viewport(
+    child: &gtk::Widget,
+    window_width: i32,
+    window_height: i32,
+    viewport: &Viewport,
+) -> gtk::Widget {
+    debug!(
+        "Wrap with viewport: window size {}x{}, canvas size {}x{}, offset {}x{}",
+        window_width,
+        window_height,
+        viewport.canvas_width,
+        viewport.canvas_height,
+        viewport.offset_x,
+        viewport.offset_y
+    );
+
+    ClipBox::new(
+        child,
+        window_width,
+        window_height,
+        viewport.canvas_width,
+        viewport.canvas_height,
+        viewport.offset_x,
+        viewport.offset_y,
+    )
+    .upcast()
 }
 
 /// If the current display is not X11, set `GDK_BACKEND=x11` and re-exec

@@ -18,6 +18,7 @@
 mod clapper;
 mod gstgtk4;
 mod web;
+mod clip_box;
 
 use enum_dispatch::enum_dispatch;
 use gtk::Widget;
@@ -27,6 +28,7 @@ use crate::model::WallpaperType;
 pub use clapper::ClapperWidget;
 pub use gstgtk4::GstGtk4Widget;
 pub use web::WebWidget;
+pub use clip_box::ClipBox;
 
 pub trait RendererWidgetBuilder {
     fn with_filepath(filepath: &str) -> Self;
