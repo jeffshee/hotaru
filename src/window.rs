@@ -188,7 +188,7 @@ mod imp {
         gdk::Display, style_context_add_provider_for_display, subclass::prelude::*, CssProvider,
         STYLE_PROVIDER_PRIORITY_APPLICATION,
     };
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
 
     #[derive(Properties, Default)]
     #[properties(wrapper_type = super::HotaruApplicationWindow)]
@@ -199,6 +199,8 @@ mod imp {
         monitor_connector: RefCell<String>,
         #[property(get, set)]
         position: RefCell<Position>,
+        pub(super) frame_count: Cell<u32>,
+        pub(super) last_fps_time: Cell<i64>,
     }
 
     #[glib::object_subclass]
@@ -265,8 +267,6 @@ mod imp {
                     });
                 }
                 LAUNCH_MODE_WINDOWED => {
-                    obj.set_default_size(1920, 1080);
-
                     obj.connect_realize(move |window| {
                         window.set_decorated(true);
                     });
@@ -309,6 +309,27 @@ mod imp {
         fn map(&self) {
             self.parent_map();
             debug!("map");
+
+            let obj = self.obj();
+            obj.add_tick_callback(|window, frame_clock| {
+                let imp = window.imp();
+                imp.frame_count.set(imp.frame_count.get() + 1);
+                let now = frame_clock.frame_time(); // microseconds
+                let last = imp.last_fps_time.get();
+                if last == 0 {
+                    imp.last_fps_time.set(now);
+                    return glib::ControlFlow::Continue;
+                }
+                if now - last >= 1_000_000 {
+                    let frames = imp.frame_count.get();
+                    let fps = frame_clock.fps();
+                    let connector = imp.monitor_connector.borrow();
+                    debug!("[{connector}] frames: {frames}, fps: {fps:.1}");
+                    imp.frame_count.set(0);
+                    imp.last_fps_time.set(now);
+                }
+                glib::ControlFlow::Continue
+            });
         }
     }
 
