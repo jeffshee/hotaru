@@ -1,4 +1,4 @@
-// Copyright (C) 2026  Jeff Shee
+// Copyright (C) 2026 Jeff Shee <jeffshee8969@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -15,20 +15,22 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-mod clapper;
-mod gstgtk4;
-mod web;
 mod clip_box;
+mod gstgtk4;
+#[cfg(feature = "mpv")]
+mod mpv;
+mod web;
 
 use enum_dispatch::enum_dispatch;
 use gtk::Widget;
 
-use crate::model::WallpaperType;
+use crate::model::{VideoRenderer, WallpaperType};
 
-pub use clapper::ClapperWidget;
-pub use gstgtk4::GstGtk4Widget;
-pub use web::WebWidget;
 pub use clip_box::ClipBox;
+pub use gstgtk4::GstGtk4Widget;
+#[cfg(feature = "mpv")]
+pub use mpv::MpvWidget;
+pub use web::WebWidget;
 
 pub trait RendererWidgetBuilder {
     fn with_filepath(filepath: &str) -> Self;
@@ -41,7 +43,8 @@ pub trait RendererWidget: AsRef<Widget> {
     fn play(&self);
     fn pause(&self);
     fn stop(&self);
-    fn set_volume(&self, volume: f64);
+    /// Set the audio volume (0-100).
+    fn set_volume(&self, volume: i32);
     fn set_mute(&self, mute: bool);
     fn set_content_fit(&self, fit: gtk::ContentFit);
     fn widget(&self) -> &Widget {
@@ -53,29 +56,30 @@ pub trait RendererWidget: AsRef<Widget> {
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum Renderer {
-    Clapper(ClapperWidget),
     Web(WebWidget),
     GstGtk4(GstGtk4Widget),
+    #[cfg(feature = "mpv")]
+    Mpv(MpvWidget),
 }
 
 impl Renderer {
     pub fn with_filepath(
         filepath: &str,
         wallpaper_type: &WallpaperType,
-        use_clapper: bool,
+        video_renderer: VideoRenderer,
         enable_graphics_offload: bool,
     ) -> Self {
         match wallpaper_type {
-            WallpaperType::Video => {
-                if use_clapper {
-                    Self::Clapper(ClapperWidget::with_filepath(filepath))
-                } else {
-                    Self::GstGtk4(GstGtk4Widget::with_filepath(
-                        filepath,
-                        enable_graphics_offload,
-                    ))
-                }
-            }
+            WallpaperType::Video => match resolve_video_renderer(video_renderer) {
+                VideoRenderer::GstGtk4 => Self::GstGtk4(GstGtk4Widget::with_filepath(
+                    filepath,
+                    enable_graphics_offload,
+                )),
+                #[cfg(feature = "mpv")]
+                VideoRenderer::Mpv => Self::Mpv(MpvWidget::with_filepath(filepath)),
+                #[cfg(not(feature = "mpv"))]
+                VideoRenderer::Mpv => unreachable!(),
+            },
             WallpaperType::Web => Self::Web(WebWidget::with_filepath(filepath)),
         }
     }
@@ -83,20 +87,35 @@ impl Renderer {
     pub fn with_uri(
         uri: &str,
         wallpaper_type: &WallpaperType,
-        use_clapper: bool,
+        video_renderer: VideoRenderer,
         enable_graphics_offload: bool,
     ) -> Self {
         match wallpaper_type {
-            WallpaperType::Video => {
-                if use_clapper {
-                    Self::Clapper(ClapperWidget::with_uri(uri))
-                } else {
+            WallpaperType::Video => match resolve_video_renderer(video_renderer) {
+                VideoRenderer::GstGtk4 => {
                     Self::GstGtk4(GstGtk4Widget::with_uri(uri, enable_graphics_offload))
                 }
-            }
+                #[cfg(feature = "mpv")]
+                VideoRenderer::Mpv => Self::Mpv(MpvWidget::with_uri(uri)),
+                #[cfg(not(feature = "mpv"))]
+                VideoRenderer::Mpv => unreachable!(),
+            },
             WallpaperType::Web => Self::Web(WebWidget::with_uri(uri)),
         }
     }
+}
+
+/// Downgrade renderer choices this build cannot honor.
+fn resolve_video_renderer(video_renderer: VideoRenderer) -> VideoRenderer {
+    #[cfg(not(feature = "mpv"))]
+    if video_renderer == VideoRenderer::Mpv {
+        tracing::warn!(
+            "mpv renderer requested but this build lacks the 'mpv' feature, \
+             falling back to GStreamer"
+        );
+        return VideoRenderer::GstGtk4;
+    }
+    video_renderer
 }
 
 impl AsRef<Widget> for Renderer {

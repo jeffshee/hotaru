@@ -1,4 +1,4 @@
-// Copyright (C) 2026  Jeff Shee
+// Copyright (C) 2026 Jeff Shee <jeffshee8969@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,12 +17,14 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::str::FromStr as _;
 
 use gtk::gio;
 use gtk::prelude::*;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::constant::APPLICATION_ID;
+use crate::model::VideoRenderer;
 use crate::widget::{Renderer, RendererWidget};
 
 /// Watches the Hotaru GSettings schema and applies changes to active renderers.
@@ -46,17 +48,21 @@ impl SettingsWatcher {
         &self.settings
     }
 
-    pub fn is_use_clapper(&self) -> bool {
-        self.settings.boolean("use-clapper")
+    pub fn video_renderer(&self) -> VideoRenderer {
+        let value = self.settings.string("video-renderer");
+        VideoRenderer::from_str(&value).unwrap_or_else(|_| {
+            warn!("Unknown video-renderer setting: {}, using default", value);
+            VideoRenderer::default()
+        })
     }
 
     pub fn is_enable_graphics_offload(&self) -> bool {
         self.settings.boolean("enable-graphics-offload")
     }
 
-    /// Read the current volume as a 0.0-1.0 float from the 0-100 int setting.
-    pub fn volume(&self) -> f64 {
-        self.settings.int("volume") as f64 / 100.0
+    /// Read the current volume (0-100).
+    pub fn volume(&self) -> i32 {
+        self.settings.int("volume")
     }
 
     pub fn is_mute(&self) -> bool {
@@ -74,8 +80,8 @@ impl SettingsWatcher {
         let renderers_clone = renderers.clone();
         self.settings
             .connect_changed(Some("volume"), move |settings, _key| {
-                let volume = settings.int("volume") as f64 / 100.0;
-                info!("Volume changed to: {:.0}%", volume * 100.0);
+                let volume = settings.int("volume");
+                info!("Volume changed to: {}%", volume);
                 for renderer in renderers_clone.borrow().iter() {
                     renderer.set_volume(volume);
                 }
@@ -127,8 +133,6 @@ fn content_fit_from_int(value: i32) -> gtk::ContentFit {
     match value {
         0 => gtk::ContentFit::Fill,
         1 => gtk::ContentFit::Contain,
-        2 => gtk::ContentFit::Cover,
-        3 => gtk::ContentFit::ScaleDown,
-        _ => gtk::ContentFit::Contain,
+        _ => gtk::ContentFit::Cover,
     }
 }

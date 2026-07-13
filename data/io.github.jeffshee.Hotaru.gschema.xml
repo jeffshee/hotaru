@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<schemalist gettext-domain="hotaru">
+<schemalist>
 	<schema id="io.github.jeffshee.Hotaru" path="/io/github/jeffshee/Hotaru/">
 		<!-- Audio -->
 		<key name="mute" type="b">
@@ -16,16 +16,20 @@
 
 		<!-- Display -->
 		<key name="content-fit" type="i">
-			<default>1</default>
-			<range min="0" max="3"/>
+			<default>2</default>
+			<range min="0" max="2"/>
 			<summary>Content fit mode</summary>
-			<description>How the wallpaper fits in the window (0: Fill, 1: Contain, 2: Cover, 3: Scale-down)</description>
+			<description>How the wallpaper fits in the window (0: Fill, 1: Contain, 2: Cover)</description>
 		</key>
 
-		<key name="use-clapper" type="b">
-			<default>true</default>
-			<summary>Use Clapper</summary>
-			<description>Use Clapper for video playback. When disabled, GStreamer is used instead.</description>
+		<key name="video-renderer" type="s">
+			<choices>
+				<choice value='mpv'/>
+				<choice value='gst-gtk4'/>
+			</choices>
+			<default>'mpv'</default>
+			<summary>Video renderer</summary>
+			<description>Renderer used for video playback: libmpv (default, best performance) or GStreamer gtk4paintablesink (fallback for builds without libmpv).</description>
 		</key>
 		<key name="enable-graphics-offload" type="b">
 			<default>true</default>

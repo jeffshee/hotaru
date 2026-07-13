@@ -1,4 +1,4 @@
-// Copyright (C) 2026  Jeff Shee
+// Copyright (C) 2026 Jeff Shee <jeffshee8969@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -63,7 +63,7 @@ impl RendererWidget for WebWidget {
 
     fn stop(&self) {}
 
-    fn set_volume(&self, _volume: f64) {}
+    fn set_volume(&self, _volume: i32) {}
 
     fn set_mute(&self, _mute: bool) {}
 

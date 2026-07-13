@@ -1,4 +1,4 @@
-// Copyright (C) 2026  Jeff Shee
+// Copyright (C) 2026 Jeff Shee <jeffshee8969@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -99,6 +99,42 @@ impl RendererState {
         })
     }
 
+    /// Rebuild the wallpaper UI from the currently stored config, reading
+    /// renderer/display settings fresh. No-op when no wallpaper is active.
+    /// Used when monitors change or the video-renderer setting is switched.
+    pub fn rebuild_ui(&self) {
+        let Some(config) = self.config.borrow().clone() else {
+            return;
+        };
+        let launch_mode = *self.launch_mode.borrow();
+
+        self.app.windows().into_iter().for_each(|w| w.close());
+
+        let video_renderer = self.settings_watcher.video_renderer();
+        let enable_graphics_offload = self.settings_watcher.is_enable_graphics_offload();
+        let fit = self.settings_watcher.content_fit();
+        self.app.build_ui(
+            &config,
+            video_renderer,
+            enable_graphics_offload,
+            fit,
+            &self.renderers,
+            launch_mode,
+        );
+
+        // Defer settings application to avoid GStreamer deadlock, see
+        // apply_wallpaper for details.
+        let volume = self.settings_watcher.volume();
+        let mute = self.settings_watcher.is_mute();
+        let renderers = self.renderers.clone();
+        glib::idle_add_local_once(move || {
+            for renderer in renderers.borrow().iter() {
+                renderer.set_volume(volume);
+                renderer.set_mute(mute);
+            }
+        });
+    }
+
     pub fn apply_wallpaper(
         &self,
         config_json: &str,
@@ -122,12 +158,12 @@ impl RendererState {
         self.app.windows().into_iter().for_each(|w| w.close());
 
         // Build new UI
-        let use_clapper = self.settings_watcher.is_use_clapper();
+        let video_renderer = self.settings_watcher.video_renderer();
         let enable_graphics_offload = self.settings_watcher.is_enable_graphics_offload();
         let fit = self.settings_watcher.content_fit();
         self.app.build_ui(
             &config,
-            use_clapper,
+            video_renderer,
             enable_graphics_offload,
             fit,
             &self.renderers,
