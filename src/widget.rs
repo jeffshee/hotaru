@@ -16,9 +16,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 mod clip_box;
+#[cfg(any(feature = "mpv", feature = "scene"))]
+mod gl_loader;
 mod gstgtk4;
 #[cfg(feature = "mpv")]
 mod mpv;
+#[cfg(feature = "scene")]
+mod scene;
 mod web;
 
 use enum_dispatch::enum_dispatch;
@@ -30,6 +34,8 @@ pub use clip_box::ClipBox;
 pub use gstgtk4::GstGtk4Widget;
 #[cfg(feature = "mpv")]
 pub use mpv::MpvWidget;
+#[cfg(feature = "scene")]
+pub use scene::SceneWidget;
 pub use web::WebWidget;
 
 pub trait RendererWidgetBuilder {
@@ -60,6 +66,8 @@ pub enum Renderer {
     GstGtk4(GstGtk4Widget),
     #[cfg(feature = "mpv")]
     Mpv(MpvWidget),
+    #[cfg(feature = "scene")]
+    Scene(SceneWidget),
 }
 
 impl Renderer {
@@ -81,6 +89,10 @@ impl Renderer {
                 VideoRenderer::Mpv => unreachable!(),
             },
             WallpaperType::Web => Self::Web(WebWidget::with_filepath(filepath)),
+            #[cfg(feature = "scene")]
+            WallpaperType::Scene => Self::Scene(SceneWidget::with_filepath(filepath)),
+            #[cfg(not(feature = "scene"))]
+            WallpaperType::Scene => scene_unsupported(),
         }
     }
 
@@ -101,8 +113,22 @@ impl Renderer {
                 VideoRenderer::Mpv => unreachable!(),
             },
             WallpaperType::Web => Self::Web(WebWidget::with_uri(uri)),
+            #[cfg(feature = "scene")]
+            WallpaperType::Scene => Self::Scene(SceneWidget::with_uri(uri)),
+            #[cfg(not(feature = "scene"))]
+            WallpaperType::Scene => scene_unsupported(),
         }
     }
+}
+
+/// Placeholder for scene wallpapers in builds without the 'scene' feature.
+#[cfg(not(feature = "scene"))]
+fn scene_unsupported() -> Renderer {
+    tracing::error!(
+        "scene wallpaper requested but this build lacks the 'scene' feature, \
+         showing a blank wallpaper"
+    );
+    Renderer::Web(WebWidget::with_uri("about:blank"))
 }
 
 /// Downgrade renderer choices this build cannot honor.

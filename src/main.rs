@@ -43,6 +43,21 @@ fn main() -> anyhow::Result<()> {
         .init();
     info!("Hotaru started with args: {:#?}", cli);
 
+    // The wallpaper-engine scene renderer needs a desktop GL 3.3 context,
+    // but GDK prefers GLES on some EGL setups (notably NVIDIA), and a GL
+    // GLArea context cannot share with a GLES display context. Steer GDK
+    // away from GLES before it opens the display; HOTARU_ALLOW_GLES=1 opts
+    // out (scene wallpapers will then fail where GDK picks GLES).
+    #[cfg(feature = "scene")]
+    if std::env::var_os("HOTARU_ALLOW_GLES").is_none() {
+        let disable = match std::env::var("GDK_DISABLE") {
+            Ok(value) if value.split(',').any(|v| v.trim() == "gles-api") => value,
+            Ok(value) if !value.is_empty() => format!("{value},gles-api"),
+            _ => "gles-api".to_string(),
+        };
+        std::env::set_var("GDK_DISABLE", disable);
+    }
+
     gst::init().unwrap();
     // Register the statically linked gtk4paintablesink so hotaru does not
     // depend on the system's gst-plugins-rs package. If the system also

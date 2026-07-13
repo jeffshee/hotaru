@@ -1,6 +1,7 @@
 # Hotaru Architecture
 
-Hotaru is a live wallpaper **renderer backend**: it draws video or web content
+Hotaru is a live wallpaper **renderer backend**: it draws video, web, or
+Wallpaper Engine scene content
 as desktop wallpaper on X11 (EWMH desktop windows) and Wayland (layer shell),
 and acts as the rendering engine for the
 [GNOME Hanabi Extension](https://github.com/jeffshee/gnome-ext-hanabi).

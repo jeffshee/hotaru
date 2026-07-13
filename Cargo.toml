@@ -32,7 +32,7 @@ x11rb = "0.13.2"
 zbus = "5.13.2"
 
 [features]
-default = ["base", "mpv"]
+default = ["base", "mpv", "scene"]
 # Everything except the optional renderers; build with
 # --no-default-features --features base to skip libmpv.
 base = [
@@ -48,6 +48,11 @@ gst_v1_24 = ["gst/v1_24", "gst-play/v1_24", "gst-video/v1_24"]
 # libmpv-based video renderer. Requires libmpv (client API 2.x) at build
 # and run time.
 mpv = ["dep:libmpv2", "dep:libloading", "dep:libc", "gdk-x11/v4_4", "gdk-x11/egl"]
+# Wallpaper Engine scene renderer backed by linux-wallpaperengine's embed
+# API (wpe_embed.h). The engine library is dlopen'd at runtime (set
+# HOTARU_WPE_LIBRARY to override the name/path), so this adds no
+# build-time dependency.
+scene = ["dep:libloading", "dep:libc", "gdk-x11/v4_4", "gdk-x11/egl"]
 wayland = ["gst-plugin-gtk4/wayland"]
 waylandegl = ["gst-plugin-gtk4/waylandegl"]
 x11egl = ["gst-plugin-gtk4/x11egl"]

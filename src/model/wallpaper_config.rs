@@ -60,4 +60,6 @@ pub enum WallpaperSource {
 pub enum WallpaperType {
     Video,
     Web,
+    /// Wallpaper Engine scene, rendered by linux-wallpaperengine.
+    Scene,
 }

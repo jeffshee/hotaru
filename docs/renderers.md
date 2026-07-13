@@ -1,7 +1,8 @@
 # Video Renderers
 
-Hotaru supports two video renderers plus a web renderer, selected at runtime
-by the `video-renderer` GSettings key. Changing the key rebuilds the active
+Hotaru supports two video renderers plus a web renderer and a Wallpaper
+Engine scene renderer. Video renderers are selected at runtime by the
+`video-renderer` GSettings key. Changing the key rebuilds the active
 wallpaper immediately.
 
 | Renderer | Setting value | Role |
@@ -9,6 +10,7 @@ wallpaper immediately.
 | libmpv (`MpvWidget`) | `mpv` | **Default.** Best performance; robust hardware decoding. |
 | GStreamer (`GstGtk4Widget`) | `gst-gtk4` | Fallback; GTK-native pipeline, used when built without libmpv. |
 | WebKitGTK (`WebWidget`) | — | Not user-selectable; used for `wallpaper_type: web`. |
+| linux-wallpaperengine (`SceneWidget`) | — | Not user-selectable; used for `wallpaper_type: scene`. |
 
 mpv is the default because its `hwdec=auto-safe` reliably engages hardware
 decoding across codecs, keeping CPU usage flat where the GStreamer path can
@@ -39,6 +41,7 @@ a warning.
 flowchart TD
     SRC["Renderer::with_filepath / with_uri"] --> T{wallpaper_type}
     T -->|web| WEB[WebWidget]
+    T -->|scene| SCN[SceneWidget]
     T -->|video| VR{video-renderer setting}
     VR -->|mpv| F{"built with<br/>mpv feature?"}
     VR -->|gst-gtk4| GST[GstGtk4Widget]
@@ -129,6 +132,46 @@ too, GStreamer's registry picks the newer of the two.
 A WebKitGTK `WebView` loading the configured URI (local file or remote).
 Playback controls are no-ops. `mirror()` uses a `gtk::WidgetPaintable` of
 the WebView.
+
+## SceneWidget (`src/widget/scene.rs`, cargo feature `scene`)
+
+Renders Wallpaper Engine **scene** wallpapers through
+[linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine)'s
+embedding API (`wpe_embed.h`, on the `feat/embed-api` branch of our fork),
+which follows the libmpv render-API model: the host owns the GL context,
+frame clock, pointer input and destination FBO, and the engine draws one
+frame per call. The widget therefore mirrors `MpvWidget`'s structure:
+
+- **Runtime loading** — the engine library
+  (`liblinux-wallpaperengine-lib.so`) is dlopen'd on first use, so hotaru
+  builds and runs without it; loading a scene then logs an error instead of
+  failing at startup. `HOTARU_WPE_LIBRARY` overrides the library name/path.
+- **Assets** — the Wallpaper Engine `assets` directory is auto-detected from
+  a Steam installation by the engine; `HOTARU_WPE_ASSETS` overrides it.
+- **Desktop GL requirement** — the engine needs OpenGL 3.3 core, not GLES,
+  and a GL `GLArea` context cannot share with a GLES GDK display context.
+  GDK prefers GLES on some EGL setups (notably NVIDIA), so `main()` appends
+  `gles-api` to `GDK_DISABLE` before GTK opens the display when built with
+  the `scene` feature (`HOTARU_ALLOW_GLES=1` opts out). The GLArea is also
+  restricted to `GLAPI::GL`.
+- **GL symbols** — resolved through the same process-wide loader as
+  `MpvWidget` (`src/widget/gl_loader.rs`).
+- **Frame scheduling** — scenes animate continuously: a frame-clock tick
+  callback queues a render every frame while playing. The engine derives
+  its scene clock from the host timestamps we pass (frame-clock time), so
+  `pause()` freezes the clock (`wpe_context_set_paused`) and damage-driven
+  redraws while paused repeat the same still frame.
+- **Property mapping** — volume 0-100 scales to the engine's 0-128;
+  `set_mute` maps to `wpe_context_set_audio_enabled`. Content fit maps to
+  the engine's viewport scaling (Fill → `stretch`, Contain → `fit`,
+  Cover → `fill`) which is fixed at scene load, so a later
+  `set_content_fit` rebuilds the engine context. Pointer motion over the
+  GLArea feeds scene parallax/interaction via `wpe_context_set_mouse`.
+- **mirror()** — `gtk::WidgetPaintable` snapshot of the GLArea, same as
+  `MpvWidget`.
+
+The audio-visualizer capture (PulseAudio + FFT inside the engine) is
+disabled; audio-reactive scenes render with a zeroed spectrum.
 
 ## Content fit
 
