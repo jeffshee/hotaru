@@ -118,6 +118,10 @@ mod imp {
     const ASSETS_ENV: &str = "HOTARU_WPE_ASSETS";
     const DEFAULT_LIBRARY: &str = "liblinux-wallpaperengine-lib.so";
 
+    /// Scene render rate cap, matching linux-wallpaperengine's standalone
+    /// default; wallpapers should not render at full monitor refresh.
+    const FPS_LIMIT: i64 = 30;
+
     // Mirrors wpe_init_params in wpe_embed.h.
     #[repr(C)]
     struct WpeInitParams {
@@ -241,6 +245,8 @@ mod imp {
         ctx: Cell<*mut WpeContext>,
         tick_id: RefCell<Option<gtk::TickCallbackId>>,
         paused: Cell<bool>,
+        /// Frame-clock time (µs) of the last scheduled render, for FPS capping.
+        last_render_us: Cell<i64>,
         // Cached so values set before realize (or between rebuilds) apply
         // when the engine context exists.
         volume: Cell<i32>,
@@ -328,10 +334,11 @@ mod imp {
                 background: background.as_ptr(),
                 width,
                 height,
-                // GTK samples the GLArea framebuffer y-down while the engine
-                // renders y-up for a window; no extra flip needed on top of
-                // the scene blit (determined empirically, see docs).
-                vflip: 0,
+                // GTK samples the GLArea framebuffer bottom-up (GL texture
+                // convention) while the engine's FBO output is top-down, so
+                // flip the final blit (verified visually; the offscreen
+                // embed-test reads rows out directly and wants vflip=0).
+                vflip: 1,
                 disable_mouse: 0,
                 disable_parallax: 0,
                 disable_audio: 0,
@@ -365,16 +372,21 @@ mod imp {
                 (lib.set_paused)(ctx, self.paused.get() as c_int);
             }
 
-            // Scenes animate continuously: redraw on every frame clock tick
-            // while playing. A paused scene stays a still frame (damage
-            // events still repaint it via the render handler).
+            // Scenes animate continuously: redraw on frame clock ticks while
+            // playing, capped at FPS_LIMIT (matching the engine's standalone
+            // default) so wallpapers don't render at full monitor refresh.
+            // A paused scene stays a still frame (damage events still
+            // repaint it via the render handler).
             let tick_id = gl_area.add_tick_callback(glib::clone!(
                 #[weak(rename_to = imp)]
                 self,
                 #[upgrade_or]
                 glib::ControlFlow::Break,
-                move |gl_area, _clock| {
-                    if !imp.paused.get() {
+                move |gl_area, clock| {
+                    const FRAME_INTERVAL_US: i64 = 1_000_000 / FPS_LIMIT;
+                    let now = clock.frame_time();
+                    if !imp.paused.get() && now - imp.last_render_us.get() >= FRAME_INTERVAL_US {
+                        imp.last_render_us.set(now);
                         gl_area.queue_render();
                     }
                     glib::ControlFlow::Continue
