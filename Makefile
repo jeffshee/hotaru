@@ -1,98 +1,66 @@
-BUILDDIR := builddir
-SRC_DIR := src
-LICENSE_HEADER := data/license-header.txt
-AUTHOR ?= Jeff Shee
+# Dev convenience wrapper. Run `make` or `make help` for the target list.
+# Override BUILDDIR=... to change the Meson build directory.
 
-# Setup build directory
-.PHONY: setup
-setup:
-	meson setup $(BUILDDIR)
+BUILDDIR    ?= _build
+PREFIX      ?= $(HOME)/.local
+MESON_FLAGS ?=
+FLATPAK_DIR ?= build-flatpak
+MANIFEST    := pkgs/flatpak/io.github.jeffshee.Hotaru.json
 
-# Setup build directory (local)
-.PHONY: setup-local
-setup-local:
-	meson setup $(BUILDDIR) --prefix=$(HOME)/.local
+.DEFAULT_GOAL := help
 
-# Build the application
-.PHONY: build
-build:
-	meson compile -C $(BUILDDIR)
+# --- Cargo dev environment --------------------------------------------------
 
-# Run the application
-.PHONY: run
-run:
+run: ## Run in debug mode (cargo run)
 	cargo run
 
-# Install the application
-.PHONY: install
-install: build
-	meson install -C $(BUILDDIR)
+test: ## Run the test suite
+	cargo test
 
-# Uninstall the application
-.PHONY: uninstall
-uninstall:
-	ninja uninstall -C $(BUILDDIR)
+lint: ## Lint the sources with clippy
+	cargo clippy
 
-# Run tests
-.PHONY: test
-test: build
-	meson test -C $(BUILDDIR)
+format: ## Auto-format the sources with rustfmt
+	cargo fmt
 
-# Generate and open documentation
-.PHONY: doc
-doc:
+doc: ## Generate and open the API documentation
 	cargo doc --no-deps --open
 
-# Clean build artifacts
-.PHONY: clean
-clean:
-	rm -rf $(BUILDDIR)
-	cargo clean
+# --- Meson build ------------------------------------------------------------
 
-# Flatpak targets
-.PHONY: install-flathub-repo
-install-flathub-repo:
-	flatpak remote-add --if-not-exists --user flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+$(BUILDDIR):
+	meson setup --prefix=$(PREFIX) $(MESON_FLAGS) $(BUILDDIR)
 
-.PHONY: flatpak-clean
-flatpak-clean:
-	rm -rf .flatpak .flatpak-builder
+build: $(BUILDDIR) ## Configure (if needed) and compile (MESON_FLAGS="-Dmpv=false" to skip libmpv)
+	meson compile -C $(BUILDDIR)
 
-.PHONY: flatpak-build
-flatpak-build: install-flathub-repo
-	flatpak-builder --force-clean --user --install-deps-from=flathub \
-		--ccache --disable-updates --repo=.flatpak/repo \
-		.flatpak/build pkgs/flatpak/io.github.jeffshee.Hotaru.json
+install: $(BUILDDIR) ## Install into PREFIX (default ~/.local, no sudo)
+	meson install -C $(BUILDDIR)
 
-.PHONY: flatpak-run
-flatpak-run:
+uninstall: $(BUILDDIR) ## Remove a previous install from PREFIX
+	ninja -C $(BUILDDIR) uninstall
+
+# --- Flatpak ----------------------------------------------------------------
+
+flatpak: ## Build & install the Flatpak (pulls SDK/Platform from flathub)
+	flatpak-builder --user --install --force-clean \
+		--install-deps-from=flathub $(FLATPAK_DIR) $(MANIFEST)
+
+flatpak-run: ## Run the installed Flatpak
 	flatpak run io.github.jeffshee.Hotaru
 
-.PHONY: flatpak-install
-flatpak-install: flatpak-build
-	flatpak --user remote-add --if-not-exists --no-gpg-verify hotaru .flatpak/repo
-	flatpak --user install --reinstall hotaru io.github.jeffshee.Hotaru
-
-.PHONY: flatpak-uninstall
-flatpak-uninstall:
+flatpak-uninstall: ## Uninstall the Flatpak
 	flatpak --user uninstall io.github.jeffshee.Hotaru
 
-# Help target
-.PHONY: help
-help:
-	@echo "Available targets:"
-	@echo "  setup        - Set up the build directory"
-	@echo "  setup-local  - Set up the build directory (local)"
-	@echo "  build        - Build the application"
-	@echo "  run          - Run the application"
-	@echo "  install      - Build and install the application"
-	@echo "  uninstall    - Uninstall the application"
-	@echo "  test         - Run tests"
-	@echo "  doc          - Generate and open documentation"
-	@echo "  clean        - Clean build artifacts"
-	@echo "  make *.rs    - Generate a new .rs file with license header"
-	@echo "  flatpak-clean      - Clean Flatpak build artifacts"
-	@echo "  flatpak-build      - Build Flatpak package"
-	@echo "  flatpak-run        - Run Flatpak package"
-	@echo "  flatpak-install    - Build and install Flatpak package"
-	@echo "  flatpak-uninstall  - Uninstall Flatpak package"
+# --- Housekeeping -----------------------------------------------------------
+
+clean: ## Remove build directories and tool caches
+	rm -rf $(BUILDDIR) $(FLATPAK_DIR) .flatpak .flatpak-builder
+	cargo clean
+
+help: ## Show this help
+	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
+		| sort \
+		| awk 'BEGIN {FS = ":.*?## "} {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+
+.PHONY: run test lint format doc build install uninstall flatpak flatpak-run flatpak-uninstall clean help
