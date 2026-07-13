@@ -127,8 +127,11 @@ fn main() -> anyhow::Result<()> {
 
         // Run the GLib main loop directly. app.run() would exit immediately
         // with NON_UNIQUE because there's nothing keeping the run loop alive
-        // before hold() takes effect.
-        glib::MainLoop::new(None, false).run();
+        // before hold() takes effect. Hand the loop to the D-Bus state so
+        // the Quit method can stop it (app.quit() only affects app.run()).
+        let main_loop = glib::MainLoop::new(None, false);
+        state.main_loop.replace(Some(main_loop.clone()));
+        main_loop.run();
     } else {
         // Standalone mode: read config file and run immediately
         let settings_watcher = hotaru::settings_watcher::SettingsWatcher::new();

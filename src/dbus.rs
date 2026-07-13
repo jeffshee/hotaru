@@ -81,6 +81,10 @@ pub struct RendererState {
     pub launch_mode: RefCell<LaunchMode>,
     pub playback_state: RefCell<PlaybackState>,
     pub settings_watcher: SettingsWatcher,
+    /// The daemon's main loop. `GApplication::quit()` only stops a loop
+    /// started by `app.run()`, which daemon mode never calls, so Quit must
+    /// stop this loop explicitly.
+    pub main_loop: RefCell<Option<glib::MainLoop>>,
 }
 
 impl RendererState {
@@ -96,6 +100,7 @@ impl RendererState {
             launch_mode: RefCell::new(LaunchMode::default()),
             playback_state: RefCell::new(PlaybackState::Idle),
             settings_watcher,
+            main_loop: RefCell::new(None),
         })
     }
 
@@ -260,6 +265,9 @@ impl RendererState {
             Command::Quit => {
                 info!("D-Bus: Quitting");
                 self.app.quit();
+                if let Some(main_loop) = self.main_loop.borrow().as_ref() {
+                    main_loop.quit();
+                }
             }
             Command::GetState { reply } => {
                 let _ = reply.send(self.playback_state.borrow().as_str().to_string());
