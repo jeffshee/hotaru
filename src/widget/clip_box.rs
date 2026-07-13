@@ -1,4 +1,4 @@
-// Copyright (C) 2026  Jeff Shee
+// Copyright (C) 2026 Jeff Shee <jeffshee8969@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -22,8 +22,8 @@
 //! viewport (window) size during measurement, preventing the oversized
 //! child from inflating the parent window.
 
-use glib::Object;
 use glib::subclass::types::ObjectSubclassIsExt as _;
+use glib::Object;
 use gtk::{glib, graphene, gsk, prelude::*};
 
 glib::wrapper! {
