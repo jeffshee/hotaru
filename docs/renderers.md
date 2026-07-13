@@ -1,0 +1,150 @@
+# Video Renderers
+
+Hotaru supports two video renderers plus a web renderer, selected at runtime
+by the `video-renderer` GSettings key. Changing the key rebuilds the active
+wallpaper immediately.
+
+| Renderer | Setting value | Role |
+|---|---|---|
+| libmpv (`MpvWidget`) | `mpv` | **Default.** Best performance; robust hardware decoding. |
+| GStreamer (`GstGtk4Widget`) | `gst-gtk4` | Fallback; GTK-native pipeline, used when built without libmpv. |
+| WebKitGTK (`WebWidget`) | — | Not user-selectable; used for `wallpaper_type: web`. |
+
+mpv is the default because its `hwdec=auto-safe` reliably engages hardware
+decoding across codecs, keeping CPU usage flat where the GStreamer path can
+fall back to software decoding.
+
+## Common interface
+
+All renderers are GTK widgets (GObject subclasses of `gtk::Box`) implementing
+the `RendererWidget` trait ([widget.rs](../src/widget.rs)):
+
+```rust
+trait RendererWidget: AsRef<Widget> {
+    fn mirror(&self, enable_graphics_offload: bool, content_fit: ContentFit) -> gtk::Box;
+    fn play(&self);  fn pause(&self);  fn stop(&self);
+    fn set_volume(&self, volume: i32);          // 0 – 100
+    fn set_mute(&self, mute: bool);
+    fn set_content_fit(&self, fit: gtk::ContentFit);
+}
+```
+
+They are held in the `Renderer` enum, dispatched statically via
+`enum_dispatch`. `Renderer::with_filepath` / `with_uri` pick the concrete
+widget from `WallpaperType` + `VideoRenderer`; a build without the `mpv`
+cargo feature transparently downgrades an `mpv` selection to `gst-gtk4` with
+a warning.
+
+```mermaid
+flowchart TD
+    SRC["Renderer::with_filepath / with_uri"] --> T{wallpaper_type}
+    T -->|web| WEB[WebWidget]
+    T -->|video| VR{video-renderer setting}
+    VR -->|mpv| F{"built with<br/>mpv feature?"}
+    VR -->|gst-gtk4| GST[GstGtk4Widget]
+    F -->|yes| MPV[MpvWidget]
+    F -->|"no (warn)"| GST
+```
+
+`mirror()` supports clone/stretch modes: it returns a widget showing the same
+output as the primary renderer without a second decode pipeline (see
+per-renderer notes below).
+
+## MpvWidget (`src/widget/mpv.rs`, cargo feature `mpv`)
+
+libmpv has no GTK video sink, so the widget drives mpv's **OpenGL render
+API** (`vo=libmpv`) into a `gtk::GLArea`:
+
+- **Handle setup** — `LC_NUMERIC` is forced back to `"C"` before
+  `mpv_create` (libmpv refuses to initialize otherwise, and `gtk::init()`
+  applies the user's locale). Options: `loop-file=inf` (wallpapers loop
+  forever), `hwdec=auto-safe`, `terminal=yes` + `msg-level=all=warn` so mpv
+  errors surface on stderr (the event queue is not drained).
+- **GL symbol resolution** — libmpv resolves every GL function through a
+  caller-provided `get_proc_address`. GTK exposes no public GL loader, so a
+  process-wide resolver dlopens `libEGL.so.1` (`eglGetProcAddress`) or
+  `libGL.so.1` (`glXGetProcAddressARB`), chosen by what GDK actually
+  realized: Wayland is always EGL; on X11, `gdk_x11_display_get_egl_display()`
+  distinguishes EGL from GLX contexts.
+- **Render context lifecycle** — created on GLArea `realize` (GL context
+  current), freed on `unrealize` (again with the context current, as libmpv
+  requires). `RenderContext<'a>` borrows the `Mpv` handle; the widget stores
+  it as `RenderContext<'static>` via a documented transmute, with struct
+  field order guaranteeing the context drops before the handle.
+- **Frame scheduling** — mpv's update callback fires on an mpv thread and
+  only sets an `Arc<AtomicBool>`; a frame-clock tick callback on the main
+  thread polls the flag and calls `queue_render()`. Redraws therefore happen
+  at the video's own rate with no cross-thread GTK calls. The `render`
+  signal queries `GL_FRAMEBUFFER_BINDING` (GTK renders GLArea into its own
+  FBO, not 0) and calls `mpv_render_context_render` with `flip_y = true`.
+- **Property mapping** — `pause`, `volume`, `mute` map directly to mpv
+  properties (mpv's volume is the same 0-100 scale). Content fit maps to mpv's own scaling: Fill → `keepaspect=no`,
+  Contain → `keepaspect` + `panscan=0`, Cover → `keepaspect` + `panscan=1`.
+  File loading is deferred until the render context exists (`loadfile`
+  before a VO exists would fail).
+
+```mermaid
+sequenceDiagram
+    participant mpv as mpv render thread
+    participant flag as AtomicBool
+    participant tick as frame-clock tick (main)
+    participant area as GLArea (main)
+
+    mpv->>flag: update callback → store(true)
+    loop every display frame
+        tick->>flag: swap(false)
+        alt new frame available
+            tick->>area: queue_render()
+            area->>area: query GL_FRAMEBUFFER_BINDING
+            area->>mpv: mpv_render_context_render(fbo, w, h, flip_y)
+        end
+    end
+```
+- **mirror()** — mpv renders straight into its GLArea and exposes no
+  `gdk::Paintable`, so clones use a `gtk::WidgetPaintable` snapshot of the
+  GLArea.
+
+## GstGtk4Widget (`src/widget/gstgtk4.rs`)
+
+The GTK-native pipeline: `gst-play` (`gstreamer-play`) with a
+`gtk4paintablesink`, whose `gdk::Paintable` is shown by a `gtk::Picture`
+(optionally wrapped in `GtkGraphicsOffload` when `enable-graphics-offload`
+is set — the sink supports dmabuf import, enabling zero-copy paths).
+
+The sink is statically linked (`gst-plugin-gtk4` crate) and registered at
+startup via `gstgtk4::plugin_register_static()`, so hotaru does not depend
+on the system's gst-plugins-rs package; if the system provides the plugin
+too, GStreamer's registry picks the newer of the two.
+
+- Looping: `PlaySignalAdapter::connect_end_of_stream` seeks back to 0.
+- Content fit is the `gtk::Picture` `content-fit` property.
+- `mirror()` creates another `gtk::Picture` on the **same paintable**, with
+  `content-fit` bound to the primary picture — clones cost one extra
+  texture draw, not a pipeline.
+- Decoding uses whatever GStreamer elements the system provides; hardware
+  decode availability depends on installed plugin sets (VA-API/NVDEC etc.).
+
+## WebWidget (`src/widget/web.rs`)
+
+A WebKitGTK `WebView` loading the configured URI (local file or remote).
+Playback controls are no-ops. `mirror()` uses a `gtk::WidgetPaintable` of
+the WebView.
+
+## Content fit
+
+`content-fit` (GSettings, default **Cover**) supports:
+
+| Value | Meaning | Wallpaper behavior |
+|---|---|---|
+| 0 Fill | stretch, ignore aspect | fills, may distort |
+| 1 Contain | fit inside, keep aspect | letterboxes on mismatch |
+| 2 Cover | fill, keep aspect, crop | fills, crops overflow (default) |
+
+`GtkContentFit::ScaleDown` is deliberately not offered: never upscaling makes
+sense for image viewers, not wallpapers (a small video would sit at 1:1 in a
+sea of black), and mpv has no equivalent.
+
+Note that in **stretch** mode the fit applies to the virtual canvas spanning
+all monitors, not to each monitor — with mixed orientations the canvas aspect
+can be extreme, which is why Cover (crop) is the default.
+
