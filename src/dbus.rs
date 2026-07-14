@@ -73,7 +73,7 @@ fn handle_command(state: &RendererState, cmd: Command) {
             state.quit();
         }
         Command::GetState { reply } => {
-            let _ = reply.send_blocking(state.playback_state.borrow().as_str().to_string());
+            let _ = reply.send_blocking(state.playback_state.borrow().to_string());
         }
     }
 }

@@ -23,7 +23,7 @@ use gtk::gio;
 use gtk::prelude::*;
 use tracing::{info, warn};
 
-use crate::constant::APPLICATION_ID;
+use crate::constants::APPLICATION_ID;
 use crate::model::VideoRenderer;
 use crate::widget::{Renderer, RendererWidget};
 
@@ -63,7 +63,7 @@ impl SettingsWatcher {
     pub fn snapshot(&self) -> RenderSettings {
         RenderSettings {
             video_renderer: self.video_renderer(),
-            enable_graphics_offload: self.is_enable_graphics_offload(),
+            enable_graphics_offload: self.is_graphics_offload_enabled(),
             content_fit: self.content_fit(),
             volume: self.volume(),
             mute: self.is_mute(),
@@ -78,7 +78,7 @@ impl SettingsWatcher {
         })
     }
 
-    pub fn is_enable_graphics_offload(&self) -> bool {
+    pub fn is_graphics_offload_enabled(&self) -> bool {
         self.settings.boolean("enable-graphics-offload")
     }
 

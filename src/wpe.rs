@@ -30,7 +30,7 @@ use std::{env, fs};
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
-use crate::constant::WPE_WORKSHOP_APP_ID;
+use crate::constants::WPE_WORKSHOP_APP_ID;
 use crate::model::WallpaperSource;
 
 /// Environment override pointing directly at the workshop content directory

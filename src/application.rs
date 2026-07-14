@@ -58,10 +58,7 @@ impl HotaruApplication {
         renderers: &Rc<RefCell<Vec<Renderer>>>,
         launch_mode: LaunchMode,
     ) {
-        let monitor_map = MonitorTracker::monitors()
-            .unwrap()
-            .try_to_monitor_map()
-            .unwrap();
+        let monitor_map = MonitorTracker::monitors().unwrap().monitor_map().unwrap();
         info!("Monitor map: {:#?}", monitor_map);
 
         let layout = WindowLayout::new(config, &monitor_map);

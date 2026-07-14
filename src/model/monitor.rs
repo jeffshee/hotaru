@@ -49,12 +49,12 @@ impl From<&Monitor> for MonitorInfo {
 
 pub type MonitorMap = HashMap<String, MonitorInfo>;
 pub trait MonitorListModelExt {
-    fn try_to_monitor_vec(&self) -> Result<Vec<Monitor>, MonitorError>;
-    fn try_to_monitor_map(&self) -> Result<MonitorMap, MonitorError>;
+    fn monitor_vec(&self) -> Result<Vec<Monitor>, MonitorError>;
+    fn monitor_map(&self) -> Result<MonitorMap, MonitorError>;
 }
 
 impl MonitorListModelExt for ListModel {
-    fn try_to_monitor_vec(&self) -> Result<Vec<Monitor>, MonitorError> {
+    fn monitor_vec(&self) -> Result<Vec<Monitor>, MonitorError> {
         self.into_iter()
             .map(|item| {
                 item.map_err(|e| MonitorError::MonitorListModel(e.to_string()))?
@@ -69,9 +69,9 @@ impl MonitorListModelExt for ListModel {
             .collect()
     }
 
-    fn try_to_monitor_map(&self) -> Result<MonitorMap, MonitorError> {
+    fn monitor_map(&self) -> Result<MonitorMap, MonitorError> {
         Ok(self
-            .try_to_monitor_vec()?
+            .monitor_vec()?
             .iter()
             .map(|m| {
                 let connector = match m.connector() {

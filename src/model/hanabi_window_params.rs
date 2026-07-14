@@ -17,7 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::constant::HANABI_APPLICATION_ID;
+use crate::constants::HANABI_APPLICATION_ID;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

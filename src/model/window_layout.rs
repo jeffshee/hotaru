@@ -85,15 +85,15 @@ pub enum WindowRole {
 impl WindowLayout {
     pub fn new(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
         match config.mode {
-            WallpaperMode::WallpaperPerMonitor => Self::handle_per_monitor(config, monitor_map),
-            WallpaperMode::CloneSingleWallpaper => Self::handle_clone_single(config, monitor_map),
+            WallpaperMode::WallpaperPerMonitor => Self::layout_per_monitor(config, monitor_map),
+            WallpaperMode::CloneSingleWallpaper => Self::layout_clone_single(config, monitor_map),
             WallpaperMode::StretchSingleWallpaper => {
-                Self::handle_stretch_single(config, monitor_map)
+                Self::layout_stretch_single(config, monitor_map)
             }
         }
     }
 
-    fn handle_per_monitor(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
+    fn layout_per_monitor(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
         let mut windows = Vec::new();
 
         for monitor_config in &config.monitors {
@@ -121,7 +121,7 @@ impl WindowLayout {
         Self { windows }
     }
 
-    fn handle_clone_single(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
+    fn layout_clone_single(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
         let mut windows = Vec::new();
         let mut primary = None;
 
@@ -175,7 +175,7 @@ impl WindowLayout {
         Self { windows }
     }
 
-    fn handle_stretch_single(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
+    fn layout_stretch_single(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
         let mut windows = Vec::new();
 
         // Calculate bounding box of all monitors

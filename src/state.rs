@@ -33,21 +33,13 @@ use crate::monitor_tracker::MonitorTracker;
 use crate::settings_watcher::SettingsWatcher;
 use crate::widget::{Renderer, RendererWidget};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// The lowercase string form (strum) is the D-Bus `State` property value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum_macros::Display)]
+#[strum(serialize_all = "lowercase")]
 pub enum PlaybackState {
     Idle,
     Playing,
     Paused,
-}
-
-impl PlaybackState {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            PlaybackState::Idle => "idle",
-            PlaybackState::Playing => "playing",
-            PlaybackState::Paused => "paused",
-        }
-    }
 }
 
 pub struct RendererState {
@@ -89,7 +81,7 @@ impl RendererState {
             "monitor-changed",
             false,
             glib::closure_local!(move |_monitor_tracker: MonitorTracker, list: ListModel| {
-                let monitor_map = list.try_to_monitor_map().unwrap();
+                let monitor_map = list.monitor_map().unwrap();
                 debug!("monitor changed: {:?}", monitor_map);
                 state.rebuild_ui();
             }),

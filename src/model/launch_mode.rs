@@ -60,7 +60,10 @@ mod tests {
             LaunchMode::from_str("gnome-ext-hanabi").unwrap(),
             LaunchMode::GnomeExtHanabi
         );
-        assert_eq!(LaunchMode::from_str("windowed").unwrap(), LaunchMode::Windowed);
+        assert_eq!(
+            LaunchMode::from_str("windowed").unwrap(),
+            LaunchMode::Windowed
+        );
     }
 
     #[test]

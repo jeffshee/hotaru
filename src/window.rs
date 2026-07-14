@@ -28,7 +28,7 @@ use x11rb::{
 
 use crate::{
     application::HotaruApplication,
-    constant::WINDOW_TITLE,
+    constants::WINDOW_TITLE,
     model::{HanabiWindowParams, LaunchMode, MonitorListModelExt as _},
 };
 
@@ -246,7 +246,7 @@ mod imp {
                     obj.connect_realize(move |window| {
                         let connector = window.monitor_connector();
                         let display = Display::default().expect("Could not connect to a display");
-                        if let Ok(monitors) = display.monitors().try_to_monitor_vec() {
+                        if let Ok(monitors) = display.monitors().monitor_vec() {
                             for monitor in &monitors {
                                 if monitor.connector().as_deref() == Some(&connector) {
                                     window.set_monitor(Some(monitor));

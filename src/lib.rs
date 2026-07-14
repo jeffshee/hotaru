@@ -16,7 +16,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 pub mod application;
-pub mod constant;
+pub mod constants;
 pub mod dbus;
 pub mod model;
 pub mod monitor_tracker;
@@ -28,7 +28,7 @@ pub mod wpe;
 
 pub mod prelude {
     pub use crate::application::HotaruApplication;
-    pub use crate::constant::*;
+    pub use crate::constants::*;
     pub use crate::model::{
         LaunchMode, MonitorInfo, MonitorListModelExt, MonitorMap, WallpaperConfig,
     };

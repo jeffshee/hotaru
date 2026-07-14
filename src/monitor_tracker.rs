@@ -82,7 +82,7 @@ mod imp {
                         #[weak]
                         list,
                         move || {
-                            let monitors: Vec<Monitor> = list.try_to_monitor_vec().unwrap();
+                            let monitors: Vec<Monitor> = list.monitor_vec().unwrap();
                             debug!("monitor changed: {:?}", monitors);
                             obj.emit_by_name("monitor-changed", &[&list])
                         }
