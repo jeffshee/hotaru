@@ -145,10 +145,10 @@ frame per call. The widget therefore mirrors `MpvWidget`'s structure:
 - **Backend source** — the fork is pinned as a git submodule at
   [third_party/linux-wallpaperengine](../third_party/linux-wallpaperengine).
   Build the library with `make wpe-lib` (inits the submodule recursively,
-  then CMake-builds `liblinux-wallpaperengine-lib.so`). Needs `glm`, `glfw`,
-  `glew`, `SDL2`, `mpv`, `lz4`, `freetype` and X11/Wayland dev headers; the
-  first CMake configure downloads CEF (unused by the embed path — slated for
-  removal).
+  then CMake-builds `liblinux-wallpaperengine-lib.so` with `ENABLE_WEB=OFF`,
+  so no CEF/Chromium is pulled in — hotaru renders web wallpapers itself).
+  Needs `glm`, `glfw`, `glew`, `SDL2`, `mpv`, `lz4`, `freetype` and
+  X11/Wayland dev headers.
 - **Runtime loading** — the engine library
   (`liblinux-wallpaperengine-lib.so`) is dlopen'd on first use, so hotaru
   builds and runs without it; loading a scene then logs an error instead of
