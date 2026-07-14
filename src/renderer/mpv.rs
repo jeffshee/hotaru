@@ -18,7 +18,7 @@
 use glib::Object;
 use gtk::{gio, glib, prelude::*, subclass::prelude::*};
 
-use super::{RendererWidget, RendererWidgetBuilder};
+use super::{mirror_by_snapshot, RendererWidget};
 
 glib::wrapper! {
     pub struct MpvWidget(ObjectSubclass<imp::MpvWidget>)
@@ -26,37 +26,21 @@ glib::wrapper! {
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
-impl RendererWidgetBuilder for MpvWidget {
-    fn with_filepath(filepath: &str) -> Self {
+impl MpvWidget {
+    pub fn with_filepath(filepath: &str) -> Self {
         let uri = gio::File::for_path(filepath).uri();
         Self::with_uri(&uri)
     }
 
-    fn with_uri(uri: &str) -> Self {
+    pub fn with_uri(uri: &str) -> Self {
         Object::builder().property("uri", uri).build()
     }
 }
 
 impl RendererWidget for MpvWidget {
     fn mirror(&self, enable_graphics_offload: bool, content_fit: gtk::ContentFit) -> gtk::Box {
-        // mpv renders straight into its GLArea and exposes no gdk::Paintable,
-        // so mirror by snapshotting the widget, same as WebWidget.
-        let widget = gtk::Box::builder().build();
-        let paintable = gtk::WidgetPaintable::new(Some(&self.gl_area()));
-        let picture = gtk::Picture::builder()
-            .paintable(&paintable)
-            .hexpand(true)
-            .vexpand(true)
-            .content_fit(content_fit)
-            .build();
-        if enable_graphics_offload {
-            let offload = gtk::GraphicsOffload::new(Some(&picture));
-            offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
-            widget.append(&offload);
-        } else {
-            widget.append(&picture);
-        }
-        widget
+        // mpv renders straight into its GLArea and exposes no gdk::Paintable.
+        mirror_by_snapshot(&self.gl_area(), enable_graphics_offload, content_fit)
     }
 
     fn play(&self) {
@@ -104,10 +88,9 @@ mod imp {
     use super::*;
 
     use std::cell::RefCell;
-    use std::ffi::{c_char, c_void, CString};
-    use std::ptr;
+    use std::ffi::c_void;
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Arc, OnceLock};
+    use std::sync::Arc;
 
     use glib::Properties;
     use libmpv2::{
@@ -116,107 +99,12 @@ mod imp {
     };
     use tracing::{debug, error, info, warn};
 
-    type GlGetProcAddressFn = unsafe extern "C" fn(*const c_char) -> *mut c_void;
-    type GlGetIntegervFn = unsafe extern "C" fn(u32, *mut i32);
-
-    const GL_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
-
-    /// Resolves OpenGL functions for mpv. libmpv does not link GL itself and
-    /// asks us for every symbol; GTK offers no public loader, so resolve via
-    /// eglGetProcAddress or glXGetProcAddressARB depending on which platform
-    /// GDK actually realized its GL context on.
-    struct GlResolver {
-        // Keeps the dlopen handle alive for the fn pointers below.
-        _lib: libloading::Library,
-        get_proc_address: GlGetProcAddressFn,
-        gl_get_integerv: Option<GlGetIntegervFn>,
-    }
-
-    // SAFETY: the resolved fn pointers are plain C functions; the Library
-    // handle is only held to keep them valid.
-    unsafe impl Send for GlResolver {}
-    unsafe impl Sync for GlResolver {}
-
-    static GL_RESOLVER: OnceLock<Option<GlResolver>> = OnceLock::new();
-
-    fn display_uses_egl() -> bool {
-        let display = match gtk::gdk::Display::default() {
-            Some(display) => display,
-            None => return true,
-        };
-        // Wayland is always EGL. On X11, GDK may realize either an EGL or a
-        // GLX context; gdk_x11_display_get_egl_display tells us which.
-        if let Some(x11_type) = glib::Type::from_name("GdkX11Display") {
-            if display.type_().is_a(x11_type) {
-                if let Some(x11_display) = display.downcast_ref::<gdk_x11::X11Display>() {
-                    return x11_display.egl_display().is_some();
-                }
-            }
-        }
-        true
-    }
-
-    /// Initialize the GL symbol resolver. Must be called on the main thread
-    /// (it inspects the GDK display) before creating the mpv render context.
-    fn init_gl_resolver() {
-        GL_RESOLVER.get_or_init(|| {
-            let (lib_name, sym_name): (&str, &[u8]) = if display_uses_egl() {
-                ("libEGL.so.1", b"eglGetProcAddress\0")
-            } else {
-                ("libGL.so.1", b"glXGetProcAddressARB\0")
-            };
-            let lib = match unsafe { libloading::Library::new(lib_name) } {
-                Ok(lib) => lib,
-                Err(e) => {
-                    error!("Failed to load {}: {}", lib_name, e);
-                    return None;
-                }
-            };
-            let get_proc_address = match unsafe { lib.get::<GlGetProcAddressFn>(sym_name) } {
-                Ok(sym) => *sym,
-                Err(e) => {
-                    error!("Failed to resolve GL loader function: {}", e);
-                    return None;
-                }
-            };
-            let gl_get_integerv = unsafe {
-                let ptr = get_proc_address(c"glGetIntegerv".as_ptr());
-                if ptr.is_null() {
-                    None
-                } else {
-                    Some(std::mem::transmute::<*mut c_void, GlGetIntegervFn>(ptr))
-                }
-            };
-            info!("mpv GL resolver initialized via {}", lib_name);
-            Some(GlResolver {
-                _lib: lib,
-                get_proc_address,
-                gl_get_integerv,
-            })
-        });
-    }
+    use crate::renderer::gl_loader::{
+        current_framebuffer_binding, get_proc_address_str, init_gl_resolver,
+    };
 
     fn get_proc_address(_ctx: &(), name: &str) -> *mut c_void {
-        let Some(resolver) = GL_RESOLVER.get().and_then(Option::as_ref) else {
-            return ptr::null_mut();
-        };
-        let Ok(name) = CString::new(name) else {
-            return ptr::null_mut();
-        };
-        unsafe { (resolver.get_proc_address)(name.as_ptr()) }
-    }
-
-    /// The FBO GTK bound for the GLArea; mpv must render into it, not 0.
-    fn current_framebuffer_binding() -> i32 {
-        let mut fbo: i32 = 0;
-        if let Some(gl_get_integerv) = GL_RESOLVER
-            .get()
-            .and_then(Option::as_ref)
-            .and_then(|r| r.gl_get_integerv)
-        {
-            unsafe { gl_get_integerv(GL_FRAMEBUFFER_BINDING, &mut fbo) };
-        }
-        fbo
+        get_proc_address_str(name)
     }
 
     #[derive(Properties, Default)]

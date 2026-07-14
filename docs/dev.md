@@ -14,6 +14,24 @@ Hotaru can be built using two methods: "Build and Install" and "Build as Flatpak
 
 > Common dev tasks (running, testing, linting, building, and Flatpak) are wrapped in the top-level `Makefile`. Run `make help` for the list.
 
+## Submodules
+
+The core renderer builds **without** any submodule. Two submodules are only
+needed for specific paths — initialize them with:
+
+```bash
+git submodule update --init --recursive
+```
+
+- [`third_party/linux-wallpaperengine`](../third_party/linux-wallpaperengine) —
+  the Wallpaper Engine **scene** backend, pinned to a commit of our
+  [fork](https://github.com/jeffshee/linux-wallpaperengine). Built by
+  `make wpe-lib` (which initializes it for you) and by the Flatpak.
+- [`pkgs/flatpak/shared-modules`](../pkgs/flatpak/shared-modules) — Flathub's
+  shared build modules (glu, glew), used only by the Flatpak.
+
+Both must be initialized before `make flatpak`.
+
 ## Build and Install
 
 ### Dependencies
@@ -41,6 +59,25 @@ Minimum versions: GTK 4.14, GStreamer 1.24, libmpv 2.x (mpv ≥ 0.35).
 To build **without libmpv** (the mpv renderer is a default cargo feature), pass
 `MESON_FLAGS="-Dmpv=false"` to `make build`, or use
 `cargo build --no-default-features --features base`.
+
+#### Scene backend (optional)
+
+Wallpaper Engine **scene** wallpapers (`wallpaper_type: scene`) are rendered by
+the bundled [linux-wallpaperengine](https://github.com/jeffshee/linux-wallpaperengine)
+fork, which hotaru `dlopen`s at runtime — so the core build does not depend on
+it. To build it locally:
+
+```bash
+make wpe-lib   # CEF-free; WPE_JOBS=N caps parallelism (default ~1 job / 2 GB RAM)
+```
+
+It additionally needs CMake, Ninja, and the following dev headers (Fedora
+package names): `glm-devel glfw-devel glew-devel mesa-libGLU-devel
+sdl2-compat-devel lz4-devel freetype-devel` plus the X11/Wayland/DBus dev
+packages.
+Point hotaru at the result with `HOTARU_WPE_LIBRARY` (see the SceneWidget
+section of [renderers.md](renderers.md)). The Flatpak bundles this backend, so
+no manual step is needed there.
 
 #### Runtime dependencies
 
@@ -103,8 +140,14 @@ your system. For more details, please refer to the
 
 All Flatpak packaging files live under [`pkgs/flatpak`](../pkgs/flatpak/),
 including the manifest `io.github.jeffshee.Hotaru.json` and the bundled build
-modules (gtk4-layer-shell, and libmpv with its FFmpeg/libass/libplacebo
-dependencies). GStreamer and WebKitGTK come from the GNOME runtime.
+modules: gtk4-layer-shell; libmpv with its FFmpeg/libass/libplacebo
+dependencies; the scene backend (`linux-wallpaperengine.json`, built CEF-free)
+with its `glm`/`glfw` deps; and `glu`/`glew` pulled from the
+[`shared-modules`](../pkgs/flatpak/shared-modules) submodule. GStreamer and
+WebKitGTK come from the GNOME runtime.
+
+> Remember to initialize the submodules (see [Submodules](#submodules)) before
+> building the Flatpak.
 
 ### Environment Setup
 

@@ -15,255 +15,65 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::cell::RefCell;
 use std::rc::Rc;
-use std::str::FromStr as _;
-use std::sync::mpsc;
 
 use gtk::glib;
-use gtk::prelude::*;
 use tracing::info;
 
-use crate::application::HotaruApplication;
-use crate::model::{LaunchMode, WallpaperConfig};
-use crate::settings_watcher::SettingsWatcher;
-use crate::widget::{Renderer, RendererWidget};
+use crate::state::RendererState;
 
 pub const DBUS_NAME: &str = "io.github.jeffshee.Hotaru";
 pub const DBUS_PATH: &str = "/io/github/jeffshee/Hotaru";
 
-// --- Commands sent from D-Bus thread to GLib main thread ---
+// --- Commands sent from the D-Bus thread to the GLib main thread ---
 
 enum Command {
     ApplyWallpaper {
         config_json: String,
         launch_mode: String,
-        reply: mpsc::Sender<Result<bool, String>>,
+        reply: async_channel::Sender<Result<bool, String>>,
     },
     DisableWallpaper {
-        reply: mpsc::Sender<bool>,
+        reply: async_channel::Sender<bool>,
     },
     Pause {
-        reply: mpsc::Sender<bool>,
+        reply: async_channel::Sender<bool>,
     },
     Resume {
-        reply: mpsc::Sender<bool>,
+        reply: async_channel::Sender<bool>,
     },
     Quit,
     GetState {
-        reply: mpsc::Sender<String>,
+        reply: async_channel::Sender<String>,
     },
 }
 
-// --- RendererState: lives on the GLib main thread ---
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlaybackState {
-    Idle,
-    Playing,
-    Paused,
-}
-
-impl PlaybackState {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            PlaybackState::Idle => "idle",
-            PlaybackState::Playing => "playing",
-            PlaybackState::Paused => "paused",
-        }
-    }
-}
-
-pub struct RendererState {
-    pub app: HotaruApplication,
-    pub renderers: Rc<RefCell<Vec<Renderer>>>,
-    pub config: RefCell<Option<WallpaperConfig>>,
-    pub launch_mode: RefCell<LaunchMode>,
-    pub playback_state: RefCell<PlaybackState>,
-    pub settings_watcher: SettingsWatcher,
-}
-
-impl RendererState {
-    pub fn new(app: HotaruApplication) -> Rc<Self> {
-        let renderers = Rc::new(RefCell::new(Vec::new()));
-        let settings_watcher = SettingsWatcher::new();
-        settings_watcher.connect_runtime_settings(renderers.clone());
-
-        Rc::new(Self {
-            app,
-            renderers,
-            config: RefCell::new(None),
-            launch_mode: RefCell::new(LaunchMode::default()),
-            playback_state: RefCell::new(PlaybackState::Idle),
-            settings_watcher,
-        })
-    }
-
-    /// Rebuild the wallpaper UI from the currently stored config, reading
-    /// renderer/display settings fresh. No-op when no wallpaper is active.
-    /// Used when monitors change or the video-renderer setting is switched.
-    pub fn rebuild_ui(&self) {
-        let Some(config) = self.config.borrow().clone() else {
-            return;
-        };
-        let launch_mode = *self.launch_mode.borrow();
-
-        self.app.windows().into_iter().for_each(|w| w.close());
-
-        let video_renderer = self.settings_watcher.video_renderer();
-        let enable_graphics_offload = self.settings_watcher.is_enable_graphics_offload();
-        let fit = self.settings_watcher.content_fit();
-        self.app.build_ui(
-            &config,
-            video_renderer,
-            enable_graphics_offload,
-            fit,
-            &self.renderers,
+fn handle_command(state: &RendererState, cmd: Command) {
+    // Replies use send_blocking: each reply channel has capacity 1 and a
+    // single send, so this never actually blocks the main thread.
+    match cmd {
+        Command::ApplyWallpaper {
+            config_json,
             launch_mode,
-        );
-
-        // Defer settings application to avoid GStreamer deadlock, see
-        // apply_wallpaper for details.
-        let volume = self.settings_watcher.volume();
-        let mute = self.settings_watcher.is_mute();
-        let renderers = self.renderers.clone();
-        glib::idle_add_local_once(move || {
-            for renderer in renderers.borrow().iter() {
-                renderer.set_volume(volume);
-                renderer.set_mute(mute);
-            }
-        });
-    }
-
-    pub fn apply_wallpaper(
-        &self,
-        config_json: &str,
-        launch_mode_str: &str,
-    ) -> Result<bool, String> {
-        let config: WallpaperConfig =
-            serde_json::from_str(config_json).map_err(|e| format!("Invalid config JSON: {}", e))?;
-        let launch_mode = LaunchMode::from_str(launch_mode_str)
-            .map_err(|e| format!("Invalid launch mode: {}", e))?;
-
-        info!(
-            "D-Bus: Applying wallpaper with mode {:?}, launch mode {:?}",
-            config.mode, launch_mode
-        );
-
-        // Update state before build_ui so monitor-changed handler sees correct values
-        *self.launch_mode.borrow_mut() = launch_mode;
-        *self.config.borrow_mut() = Some(config.clone());
-
-        // Close existing windows
-        self.app.windows().into_iter().for_each(|w| w.close());
-
-        // Build new UI
-        let video_renderer = self.settings_watcher.video_renderer();
-        let enable_graphics_offload = self.settings_watcher.is_enable_graphics_offload();
-        let fit = self.settings_watcher.content_fit();
-        self.app.build_ui(
-            &config,
-            video_renderer,
-            enable_graphics_offload,
-            fit,
-            &self.renderers,
-            launch_mode,
-        );
-
-        // Defer settings application to avoid GStreamer deadlock.
-        // build_ui() starts pipeline state transitions via renderer.play(),
-        // and setting properties (volume, mute) during the transition blocks
-        // the main loop. An idle callback runs after the transition completes.
-        let volume = self.settings_watcher.volume();
-        let mute = self.settings_watcher.is_mute();
-        let renderers = self.renderers.clone();
-        glib::idle_add_local_once(move || {
-            for renderer in renderers.borrow().iter() {
-                renderer.set_volume(volume);
-                renderer.set_mute(mute);
-                renderer.set_content_fit(fit);
-            }
-        });
-
-        *self.playback_state.borrow_mut() = PlaybackState::Playing;
-
-        // Persist for auto-restore on next daemon startup
-        self.settings_watcher.set_last_wallpaper_config(config_json);
-        self.settings_watcher.set_last_launch_mode(launch_mode_str);
-
-        Ok(true)
-    }
-
-    fn disable_wallpaper(&self) -> bool {
-        info!("D-Bus: Disabling wallpaper");
-
-        for renderer in self.renderers.borrow().iter() {
-            renderer.stop();
+            reply,
+        } => {
+            let result = state.apply_wallpaper(&config_json, &launch_mode);
+            let _ = reply.send_blocking(result);
         }
-
-        self.app.windows().into_iter().for_each(|w| w.close());
-
-        self.renderers.borrow_mut().clear();
-        *self.config.borrow_mut() = None;
-        *self.playback_state.borrow_mut() = PlaybackState::Idle;
-
-        // Clear persisted config
-        self.settings_watcher.set_last_wallpaper_config("");
-        self.settings_watcher.set_last_launch_mode("");
-
-        true
-    }
-
-    fn pause(&self) -> bool {
-        if *self.playback_state.borrow() != PlaybackState::Playing {
-            return false;
+        Command::DisableWallpaper { reply } => {
+            let _ = reply.send_blocking(state.disable_wallpaper());
         }
-        info!("D-Bus: Pausing playback");
-        for renderer in self.renderers.borrow().iter() {
-            renderer.pause();
+        Command::Pause { reply } => {
+            let _ = reply.send_blocking(state.pause());
         }
-        *self.playback_state.borrow_mut() = PlaybackState::Paused;
-        true
-    }
-
-    fn resume(&self) -> bool {
-        if *self.playback_state.borrow() != PlaybackState::Paused {
-            return false;
+        Command::Resume { reply } => {
+            let _ = reply.send_blocking(state.resume());
         }
-        info!("D-Bus: Resuming playback");
-        for renderer in self.renderers.borrow().iter() {
-            renderer.play();
+        Command::Quit => {
+            state.quit();
         }
-        *self.playback_state.borrow_mut() = PlaybackState::Playing;
-        true
-    }
-
-    fn handle_command(&self, cmd: Command) {
-        match cmd {
-            Command::ApplyWallpaper {
-                config_json,
-                launch_mode,
-                reply,
-            } => {
-                let result = self.apply_wallpaper(&config_json, &launch_mode);
-                let _ = reply.send(result);
-            }
-            Command::DisableWallpaper { reply } => {
-                let _ = reply.send(self.disable_wallpaper());
-            }
-            Command::Pause { reply } => {
-                let _ = reply.send(self.pause());
-            }
-            Command::Resume { reply } => {
-                let _ = reply.send(self.resume());
-            }
-            Command::Quit => {
-                info!("D-Bus: Quitting");
-                self.app.quit();
-            }
-            Command::GetState { reply } => {
-                let _ = reply.send(self.playback_state.borrow().as_str().to_string());
-            }
+        Command::GetState { reply } => {
+            let _ = reply.send_blocking(state.playback_state.borrow().to_string());
         }
     }
 }
@@ -271,14 +81,28 @@ impl RendererState {
 // --- D-Bus interface (Send + Sync, communicates via channel) ---
 
 struct RendererService {
-    cmd_tx: mpsc::SyncSender<Command>,
+    cmd_tx: async_channel::Sender<Command>,
     /// Connection reference used to emit PropertiesChanged signals.
     conn: std::sync::Mutex<Option<zbus::Connection>>,
 }
 
-// SAFETY: RendererService only contains Send + Sync types
-unsafe impl Send for RendererService {}
-unsafe impl Sync for RendererService {}
+impl RendererService {
+    /// Send a command to the main thread and await its reply.
+    async fn request<R>(
+        &self,
+        make_command: impl FnOnce(async_channel::Sender<R>) -> Command,
+    ) -> zbus::fdo::Result<R> {
+        let (reply_tx, reply_rx) = async_channel::bounded(1);
+        self.cmd_tx
+            .send(make_command(reply_tx))
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
+        reply_rx
+            .recv()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))
+    }
+}
 
 #[zbus::interface(name = "io.github.jeffshee.Hotaru.Renderer")]
 impl RendererService {
@@ -287,18 +111,15 @@ impl RendererService {
         config_json: &str,
         launch_mode: &str,
     ) -> zbus::fdo::Result<bool> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.cmd_tx
-            .send(Command::ApplyWallpaper {
-                config_json: config_json.to_string(),
-                launch_mode: launch_mode.to_string(),
-                reply: reply_tx,
+        let config_json = config_json.to_string();
+        let launch_mode = launch_mode.to_string();
+        let result = self
+            .request(|reply| Command::ApplyWallpaper {
+                config_json,
+                launch_mode,
+                reply,
             })
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
-
-        let result = reply_rx
-            .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?
+            .await?
             .map_err(zbus::fdo::Error::Failed)?;
 
         self.emit_state_changed().await;
@@ -306,43 +127,21 @@ impl RendererService {
     }
 
     async fn disable_wallpaper(&self) -> zbus::fdo::Result<bool> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.cmd_tx
-            .send(Command::DisableWallpaper { reply: reply_tx })
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
-
-        let result = reply_rx
-            .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?;
-
+        let result = self
+            .request(|reply| Command::DisableWallpaper { reply })
+            .await?;
         self.emit_state_changed().await;
         Ok(result)
     }
 
     async fn pause(&self) -> zbus::fdo::Result<bool> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.cmd_tx
-            .send(Command::Pause { reply: reply_tx })
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
-
-        let result = reply_rx
-            .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?;
-
+        let result = self.request(|reply| Command::Pause { reply }).await?;
         self.emit_state_changed().await;
         Ok(result)
     }
 
     async fn resume(&self) -> zbus::fdo::Result<bool> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.cmd_tx
-            .send(Command::Resume { reply: reply_tx })
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
-
-        let result = reply_rx
-            .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?;
-
+        let result = self.request(|reply| Command::Resume { reply }).await?;
         self.emit_state_changed().await;
         Ok(result)
     }
@@ -350,19 +149,13 @@ impl RendererService {
     async fn quit(&self) -> zbus::fdo::Result<()> {
         self.cmd_tx
             .send(Command::Quit)
+            .await
             .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))
     }
 
     #[zbus(property)]
     async fn state(&self) -> zbus::fdo::Result<String> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.cmd_tx
-            .send(Command::GetState { reply: reply_tx })
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
-
-        reply_rx
-            .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))
+        self.request(|reply| Command::GetState { reply }).await
     }
 }
 
@@ -389,14 +182,14 @@ impl RendererService {
 /// Sets up a command channel: the D-Bus service sends commands, and
 /// the GLib main loop processes them on the main thread.
 pub fn register_dbus_service(state: Rc<RendererState>) {
-    let (cmd_tx, cmd_rx) = mpsc::sync_channel::<Command>(32);
+    let (cmd_tx, cmd_rx) = async_channel::bounded::<Command>(32);
 
-    // Process commands on the GLib main thread
-    glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
-        while let Ok(cmd) = cmd_rx.try_recv() {
-            state.handle_command(cmd);
+    // Process commands on the GLib main thread as they arrive (the
+    // channel integrates with the main loop; no polling).
+    glib::spawn_future_local(async move {
+        while let Ok(cmd) = cmd_rx.recv().await {
+            handle_command(&state, cmd);
         }
-        glib::ControlFlow::Continue
     });
 
     // Spawn the zbus connection on a background thread.

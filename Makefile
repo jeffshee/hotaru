@@ -40,6 +40,25 @@ install: $(BUILDDIR) ## Install into PREFIX (default ~/.local, no sudo)
 uninstall: $(BUILDDIR) ## Remove a previous install from PREFIX
 	ninja -C $(BUILDDIR) uninstall
 
+# --- Wallpaper Engine scene backend -----------------------------------------
+
+WPE_DIR   := third_party/linux-wallpaperengine
+WPE_BUILD := $(WPE_DIR)/build
+WPE_LIB   := $(abspath $(WPE_BUILD)/output/liblinux-wallpaperengine-lib.so)
+
+# Heavy C++ translation units (glslang, quickjs) each peak at 1-2 GB, so full
+# parallelism can exhaust RAM and trigger the OOM killer. Cap jobs to ~1 per
+# 2 GB of currently-available memory, bounded by core count. Override with
+# WPE_JOBS=N.
+WPE_JOBS ?= $(shell j=$$(nproc); m=$$(awk '/MemAvailable/ {print int($$2/2000000)}' /proc/meminfo 2>/dev/null); [ -z "$$m" ] && m=$$j; [ "$$m" -lt 1 ] && m=1; [ "$$m" -lt "$$j" ] && echo $$m || echo $$j)
+
+wpe-lib: ## Build the pinned linux-wallpaperengine scene backend (CEF-free; WPE_JOBS=N caps parallelism)
+	git submodule update --init --recursive $(WPE_DIR)
+	cmake -S $(WPE_DIR) -B $(WPE_BUILD) -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DENABLE_WEB=OFF
+	cmake --build $(WPE_BUILD) --target linux-wallpaperengine-lib -j $(WPE_JOBS)
+	@echo "Built $(WPE_LIB) (parallelism: $(WPE_JOBS) jobs)"
+	@echo "Run hotaru with: HOTARU_WPE_LIBRARY=$(WPE_LIB)"
+
 # --- Flatpak ----------------------------------------------------------------
 
 flatpak: ## Build & install the Flatpak (pulls SDK/Platform from flathub)
@@ -63,4 +82,4 @@ help: ## Show this help
 		| sort \
 		| awk 'BEGIN {FS = ":.*?## "} {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-.PHONY: run test lint format doc build install uninstall flatpak flatpak-run flatpak-uninstall clean help
+.PHONY: run test lint format doc build install uninstall wpe-lib flatpak flatpak-run flatpak-uninstall clean help

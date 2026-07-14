@@ -51,8 +51,17 @@ pub enum MonitorConfig {
 #[serde(untagged)]
 #[serde(rename_all = "snake_case")]
 pub enum WallpaperSource {
-    Filepath { filepath: String },
-    Uri { uri: String },
+    Filepath {
+        filepath: String,
+    },
+    Uri {
+        uri: String,
+    },
+    /// A Wallpaper Engine workshop item id, resolved to its Steam directory
+    /// at load time. Only valid with `wallpaper_type: wpe`.
+    WorkshopId {
+        workshop_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,4 +69,8 @@ pub enum WallpaperSource {
 pub enum WallpaperType {
     Video,
     Web,
+    /// A Wallpaper Engine package (workshop item). Its `project.json` `type`
+    /// selects the actual renderer: scene → linux-wallpaperengine, video →
+    /// the video renderer, web → the web renderer.
+    Wpe,
 }

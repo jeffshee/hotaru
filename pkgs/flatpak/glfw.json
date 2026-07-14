@@ -1,0 +1,21 @@
+{
+    "name": "glfw",
+    "buildsystem": "cmake-ninja",
+    "config-opts": [
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DBUILD_SHARED_LIBS=ON",
+        "-DGLFW_BUILD_EXAMPLES=OFF",
+        "-DGLFW_BUILD_TESTS=OFF",
+        "-DGLFW_BUILD_DOCS=OFF"
+    ],
+    "cleanup": [
+        "/lib/cmake"
+    ],
+    "sources": [
+        {
+            "type": "git",
+            "url": "https://github.com/glfw/glfw.git",
+            "commit": "a74efa0d5628b74adc0426af4c5710e287fa7c2c"
+        }
+    ]
+}

@@ -1,0 +1,10 @@
+{
+    "mode": "stretch_single_wallpaper",
+    "monitors": [
+        {
+            "monitor": "STRETCH",
+            "wallpaper_type": "wpe",
+            "workshop_id": "1771553708"
+        }
+    ]
+}

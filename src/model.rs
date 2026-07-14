@@ -15,18 +15,18 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-mod hanabi_window_params;
+mod hanabi_params;
 mod launch_mode;
 mod monitor;
-mod source_config;
 mod video_renderer;
 mod wallpaper_config;
 mod window_layout;
 
-pub use hanabi_window_params::HanabiWindowParams;
+pub use hanabi_params::HanabiParams;
 pub use launch_mode::LaunchMode;
-pub use monitor::*;
-pub use source_config::*;
+pub use monitor::{MonitorError, MonitorInfo, MonitorListModelExt, MonitorMap};
 pub use video_renderer::VideoRenderer;
-pub use wallpaper_config::*;
-pub use window_layout::*;
+pub use wallpaper_config::{
+    MonitorConfig, WallpaperConfig, WallpaperMode, WallpaperSource, WallpaperType,
+};
+pub use window_layout::{Viewport, WindowGeometry, WindowInfo, WindowLayout, WindowRole};

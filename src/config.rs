@@ -15,12 +15,19 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-pub const APPLICATION_ID: &str = "io.github.jeffshee.Hotaru";
-pub const WINDOW_TITLE: &str = "Hotaru Renderer";
+//! Build-time configuration. Meson injects the authoritative values via
+//! `HOTARU_VERSION` / `HOTARU_PKGDATADIR` when it drives cargo (see
+//! src/meson.build); plain `cargo build` falls back to the cargo package
+//! version and the standard system data directory.
 
-pub const HANABI_APPLICATION_ID: &str = "io.github.jeffshee.HanabiRenderer";
+pub const VERSION: &str = match option_env!("HOTARU_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
-pub const LAUNCH_MODE_X11_DESKTOP: &str = "x11-desktop";
-pub const LAUNCH_MODE_WAYLAND_LAYER_SHELL: &str = "wayland-layer-shell";
-pub const LAUNCH_MODE_GNOME_EXT_HANABI: &str = "gnome-ext-hanabi";
-pub const LAUNCH_MODE_WINDOWED: &str = "windowed";
+/// Installed data directory (gresource bundle etc.).
+#[allow(dead_code)] // not read yet; kept for gresource loading
+pub const PKGDATADIR: &str = match option_env!("HOTARU_PKGDATADIR") {
+    Some(dir) => dir,
+    None => "/usr/share/hotaru",
+};

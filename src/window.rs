@@ -28,8 +28,8 @@ use x11rb::{
 
 use crate::{
     application::HotaruApplication,
-    constant::WINDOW_TITLE,
-    model::{HanabiWindowParams, LaunchMode, MonitorListModelExt as _},
+    constants::WINDOW_TITLE,
+    model::{HanabiParams, LaunchMode, MonitorListModelExt as _},
 };
 
 glib::wrapper! {
@@ -48,124 +48,81 @@ impl HotaruApplicationWindow {
             .build()
     }
 
+    /// Run `operation` with an X11 connection and this window's xid.
+    /// A no-op (with an error log) when the window has no X11 surface.
+    fn with_x11_window(
+        &self,
+        operation: impl FnOnce(&x11rb::rust_connection::RustConnection, u32) -> anyhow::Result<()>,
+    ) {
+        let Some(surface) = self.surface() else {
+            error!("Failed to get Surface");
+            return;
+        };
+        let Ok(x11_surface) = surface.downcast::<X11Surface>() else {
+            error!("Failed to downcast Surface to X11Surface");
+            return;
+        };
+        let xid = x11_surface.xid() as u32;
+        debug!("xid: {xid}");
+        let conn = match x11rb::connect(None) {
+            Ok((conn, _screen_num)) => conn,
+            Err(e) => {
+                error!("Failed to connect to X11: {}", e);
+                return;
+            }
+        };
+        if let Err(e) = operation(&conn, xid).and_then(|_| Ok(conn.flush()?)) {
+            error!("X11 window operation failed: {}", e);
+        }
+    }
+
     fn set_x11_window_position(&self, x: i32, y: i32) {
         debug!("set_x11_window_position: {x}, {y}");
-        if let Some(surface) = self.surface() {
-            if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
-                let xid = x11_surface.xid();
-                debug!("xid: {xid}");
-                let (conn, _screen_num) = x11rb::connect(None).unwrap();
-                let position = ConfigureWindowAux::new().x(x).y(y);
-
-                let operation = move || {
-                    conn.configure_window(xid as u32, &position)
-                        .and_then(|_| conn.flush())
-                        .unwrap_or_else(|e| error!("Failed to position window: {}", e));
-                };
-                if self.is_mapped() {
-                    operation();
-                }
-                self.connect_map(move |_window| {
-                    operation();
-                });
-            } else {
-                error!("Failed to downcast Surface to X11Surface");
-            }
-        } else {
-            error!("Failed to get Surface");
-        }
+        self.with_x11_window(|conn, xid| {
+            conn.configure_window(xid, &ConfigureWindowAux::new().x(x).y(y))?;
+            Ok(())
+        });
     }
 
-    fn set_x11_window_type_hint(&self) {
-        debug!("set_x11_window_type_hint");
-        if let Some(surface) = self.surface() {
-            if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
-                let xid = x11_surface.xid();
-                debug!("xid: {xid}");
-                let (conn, _screen_num) = x11rb::connect(None).unwrap();
-                let net_wm_window_type = conn
-                    .intern_atom(false, b"_NET_WM_WINDOW_TYPE")
-                    .unwrap()
-                    .reply()
-                    .unwrap()
-                    .atom;
-                let net_wm_window_type_desktop = conn
-                    .intern_atom(false, b"_NET_WM_WINDOW_TYPE_DESKTOP")
-                    .unwrap()
-                    .reply()
-                    .unwrap()
-                    .atom;
-
-                let operation = move || {
-                    conn.change_property32(
-                        PropMode::REPLACE,
-                        xid as u32,
-                        net_wm_window_type,
-                        AtomEnum::ATOM,
-                        &[net_wm_window_type_desktop],
-                    )
-                    .and_then(|_| conn.flush())
-                    .unwrap_or_else(|e| error!("Failed to set window type hint: {}", e));
-                };
-                if self.is_mapped() {
-                    operation();
-                }
-                self.connect_map(move |_window| {
-                    operation();
-                });
-            } else {
-                error!("Failed to downcast Surface to X11Surface");
-            }
-        } else {
-            error!("Failed to get Surface");
-        }
-    }
-
-    /// Set `_GTK_FRAME_EXTENTS` to zero so Mutter does not draw a
-    /// compositor-side shadow around the window.
-    fn clear_x11_frame_extents(&self) {
-        debug!("clear_x11_frame_extents");
-        if let Some(surface) = self.surface() {
-            if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
-                let xid = x11_surface.xid();
-                let (conn, _screen_num) = x11rb::connect(None).unwrap();
-                let gtk_frame_extents = conn
-                    .intern_atom(false, b"_GTK_FRAME_EXTENTS")
-                    .unwrap()
-                    .reply()
-                    .unwrap()
-                    .atom;
-
-                let operation = move || {
-                    conn.change_property32(
-                        PropMode::REPLACE,
-                        xid as u32,
-                        gtk_frame_extents,
-                        AtomEnum::CARDINAL,
-                        &[0, 0, 0, 0],
-                    )
-                    .and_then(|_| conn.flush())
-                    .unwrap_or_else(|e| error!("Failed to clear frame extents: {}", e));
-                };
-                if self.is_mapped() {
-                    operation();
-                }
-                self.connect_map(move |_window| {
-                    operation();
-                });
-            }
-        }
+    /// Apply the X11 desktop-window properties: the DESKTOP window type
+    /// hint, zeroed `_GTK_FRAME_EXTENTS` (so Mutter draws no compositor-side
+    /// shadow), and the window position. Called on map, and the position
+    /// again whenever it changes.
+    fn apply_x11_desktop_setup(&self) {
+        debug!("apply_x11_desktop_setup");
+        let position = self.position();
+        self.with_x11_window(|conn, xid| {
+            let atom = |name: &[u8]| -> anyhow::Result<u32> {
+                Ok(conn.intern_atom(false, name)?.reply()?.atom)
+            };
+            conn.change_property32(
+                PropMode::REPLACE,
+                xid,
+                atom(b"_NET_WM_WINDOW_TYPE")?,
+                AtomEnum::ATOM,
+                &[atom(b"_NET_WM_WINDOW_TYPE_DESKTOP")?],
+            )?;
+            conn.change_property32(
+                PropMode::REPLACE,
+                xid,
+                atom(b"_GTK_FRAME_EXTENTS")?,
+                AtomEnum::CARDINAL,
+                &[0, 0, 0, 0],
+            )?;
+            conn.configure_window(xid, &ConfigureWindowAux::new().x(position.x).y(position.y))?;
+            Ok(())
+        });
     }
 
     fn set_hanabi_window_title(&self) {
         let position = self.position();
-        let params = HanabiWindowParams {
+        let params = HanabiParams {
             position: [position.x, position.y],
             keep_at_bottom: true,
             keep_minimized: true,
             keep_position: true,
         };
-        self.set_title(Some(&params.hanabi_window_title()));
+        self.set_title(Some(&params.window_title()));
     }
 }
 
@@ -177,11 +134,6 @@ pub struct Position {
 }
 
 mod imp {
-    use crate::constant::{
-        LAUNCH_MODE_GNOME_EXT_HANABI, LAUNCH_MODE_WAYLAND_LAYER_SHELL, LAUNCH_MODE_WINDOWED,
-        LAUNCH_MODE_X11_DESKTOP,
-    };
-
     use super::*;
     use glib::Properties;
     use gtk::{
@@ -194,7 +146,7 @@ mod imp {
     #[properties(wrapper_type = super::HotaruApplicationWindow)]
     pub struct HotaruApplicationWindow {
         #[property(get, construct_only)]
-        launch_mode: RefCell<String>,
+        launch_mode: RefCell<LaunchMode>,
         #[property(get, set)]
         monitor_connector: RefCell<String>,
         #[property(get, set)]
@@ -228,16 +180,13 @@ mod imp {
             );
             obj.set_css_classes(&["black-bg"]);
 
-            match obj.launch_mode().as_str() {
-                LAUNCH_MODE_X11_DESKTOP => {
-                    obj.connect_realize(move |window| {
-                        window.set_x11_window_type_hint();
-                        window.clear_x11_frame_extents();
-                        let position = window.position();
-                        window.set_x11_window_position(position.x, position.y);
-                    });
+            match obj.launch_mode() {
+                LaunchMode::X11Desktop => {
+                    // Applied on every map: a remap starts from fresh X
+                    // window state, so the hints must be set again.
+                    obj.connect_map(|window| window.apply_x11_desktop_setup());
                 }
-                LAUNCH_MODE_WAYLAND_LAYER_SHELL => {
+                LaunchMode::WaylandLayerShell => {
                     obj.init_layer_shell();
                     obj.set_layer(gtk4_layer_shell::Layer::Background);
                     obj.set_anchor(gtk4_layer_shell::Edge::Left, true);
@@ -246,12 +195,12 @@ mod imp {
                     obj.set_anchor(gtk4_layer_shell::Edge::Bottom, true);
                     obj.set_exclusive_zone(-1);
                     obj.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::None);
-                    obj.set_namespace(Some("hidamari-layer-shell"));
+                    obj.set_namespace(Some("hotaru-layer-shell"));
 
                     obj.connect_realize(move |window| {
                         let connector = window.monitor_connector();
                         let display = Display::default().expect("Could not connect to a display");
-                        if let Ok(monitors) = display.monitors().try_to_monitor_vec() {
+                        if let Ok(monitors) = display.monitors().monitor_vec() {
                             for monitor in &monitors {
                                 if monitor.connector().as_deref() == Some(&connector) {
                                     window.set_monitor(Some(monitor));
@@ -261,18 +210,15 @@ mod imp {
                         }
                     });
                 }
-                LAUNCH_MODE_GNOME_EXT_HANABI => {
+                LaunchMode::GnomeExtHanabi => {
                     obj.connect_realize(move |window| {
                         window.set_hanabi_window_title();
                     });
                 }
-                LAUNCH_MODE_WINDOWED => {
+                LaunchMode::Windowed => {
                     obj.connect_realize(move |window| {
                         window.set_decorated(true);
                     });
-                }
-                launch_mode => {
-                    error!("Unknown launch mode: {}", launch_mode);
                 }
             }
         }
@@ -289,18 +235,19 @@ mod imp {
                 debug!("position_notify");
                 let position = window.position();
 
-                match window.launch_mode().as_str() {
-                    LAUNCH_MODE_X11_DESKTOP => {
-                        window.set_x11_window_position(position.x, position.y);
+                match window.launch_mode() {
+                    LaunchMode::X11Desktop => {
+                        // While unmapped, the map handler applies the
+                        // (property-stored) position instead.
+                        if window.is_mapped() {
+                            window.set_x11_window_position(position.x, position.y);
+                        }
                     }
-                    LAUNCH_MODE_GNOME_EXT_HANABI => {
+                    LaunchMode::GnomeExtHanabi => {
                         window.set_hanabi_window_title();
                     }
-                    LAUNCH_MODE_WAYLAND_LAYER_SHELL | LAUNCH_MODE_WINDOWED => {
+                    LaunchMode::WaylandLayerShell | LaunchMode::Windowed => {
                         // No position updates needed
-                    }
-                    launch_mode => {
-                        error!("Unknown launch mode: {}", launch_mode);
                     }
                 }
             });

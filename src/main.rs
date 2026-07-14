@@ -16,21 +16,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 mod cli;
-
-use std::cell::RefCell;
-use std::rc::Rc;
+mod config;
 
 use clap::Parser as _;
 use gtk::{
-    gio::{self, ApplicationFlags, ListModel},
+    gio::{self, ApplicationFlags},
     glib,
     prelude::*,
 };
-use tracing::{debug, info};
+use tracing::info;
 use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt as _, EnvFilter};
 
-use hotaru::dbus::{register_dbus_service, RendererState};
+use hotaru::dbus::register_dbus_service;
 use hotaru::prelude::*;
+use hotaru::state::RendererState;
 
 use crate::cli::Cli;
 
@@ -42,6 +41,30 @@ fn main() -> anyhow::Result<()> {
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("hotaru=info")))
         .init();
     info!("Hotaru started with args: {:#?}", cli);
+
+    // The wallpaper-engine scene renderer needs a desktop GL 3.3 context,
+    // but GDK prefers GLES on some EGL setups (notably NVIDIA), and a GL
+    // GLArea context cannot share with a GLES display context. Steer GDK
+    // away from GLES before it opens the display; HOTARU_ALLOW_GLES=1 opts
+    // out (scene wallpapers will then fail where GDK picks GLES).
+    #[cfg(feature = "wpe")]
+    if std::env::var_os("HOTARU_ALLOW_GLES").is_none() {
+        let disable = match std::env::var("GDK_DISABLE") {
+            Ok(value) if value.split(',').any(|v| v.trim() == "gles-api") => value,
+            Ok(value) if !value.is_empty() => format!("{value},gles-api"),
+            _ => "gles-api".to_string(),
+        };
+        std::env::set_var("GDK_DISABLE", disable);
+    }
+
+    // WebKit's sandboxed WebProcess reads local <audio>/<video> files itself
+    // (GStreamer filesrc), so web wallpapers get their directory granted into
+    // the sandbox (see widget/web.rs) and the sandbox stays enabled. Escape
+    // hatch: HOTARU_WEBKIT_SANDBOX=0 disables WebKit's sandbox entirely, for
+    // wallpapers that read local media from outside their own directory.
+    if std::env::var("HOTARU_WEBKIT_SANDBOX").as_deref() == Ok("0") {
+        std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
+    }
 
     gst::init().unwrap();
     // Register the statically linked gtk4paintablesink so hotaru does not
@@ -59,41 +82,21 @@ fn main() -> anyhow::Result<()> {
 
     let app = HotaruApplication::new(APPLICATION_ID, &app_flags);
 
+    // Both modes share the same state object and rebuild path: monitor
+    // changes and video-renderer switches rebuild the active wallpaper.
+    let state = RendererState::new(app.clone());
+    let monitor_watcher = MonitorWatcher::new();
+    state.watch_changes(&monitor_watcher);
+
     if cli.daemon {
         // Daemon mode: register D-Bus service and wait for commands
         info!("Starting in daemon mode");
-
-        let state = RendererState::new(app.clone());
-        let monitor_tracker = MonitorTracker::new();
 
         // Register D-Bus service immediately (before app.run()) so it's
         // available as soon as the process starts. This is critical for
         // D-Bus activation: the caller expects the interface to be ready
         // shortly after the process is launched.
         register_dbus_service(state.clone());
-
-        // In daemon mode, monitor changes trigger rebuild if a wallpaper is active
-        let state_for_monitor = state.clone();
-        monitor_tracker.connect_closure(
-            "monitor-changed",
-            false,
-            glib::closure_local!(move |_monitor_tracker: MonitorTracker, list: ListModel| {
-                let monitor_map = list.try_to_monitor_map().unwrap();
-                debug!("monitor changed: {:?}", monitor_map);
-                state_for_monitor.rebuild_ui();
-            }),
-        );
-
-        // Switching the video renderer rebuilds the active wallpaper so the
-        // change takes effect immediately.
-        let state_for_renderer = state.clone();
-        state.settings_watcher.settings().connect_changed(
-            Some("video-renderer"),
-            move |_settings, _key| {
-                info!("Video renderer setting changed, rebuilding");
-                state_for_renderer.rebuild_ui();
-            },
-        );
 
         // Register the GApplication so it can create windows, but hold it
         // so it stays alive even with no windows open.
@@ -112,11 +115,13 @@ fn main() -> anyhow::Result<()> {
 
         // Run the GLib main loop directly. app.run() would exit immediately
         // with NON_UNIQUE because there's nothing keeping the run loop alive
-        // before hold() takes effect.
-        glib::MainLoop::new(None, false).run();
+        // before hold() takes effect. Hand the loop to the D-Bus state so
+        // the Quit method can stop it (app.quit() only affects app.run()).
+        let main_loop = glib::MainLoop::new(None, false);
+        state.main_loop.replace(Some(main_loop.clone()));
+        main_loop.run();
     } else {
         // Standalone mode: read config file and run immediately
-        let settings_watcher = hotaru::settings_watcher::SettingsWatcher::new();
         let launch_mode = cli.launch_mode;
 
         // Handle XWayland fallback for X11Desktop mode
@@ -131,67 +136,9 @@ fn main() -> anyhow::Result<()> {
         let config: WallpaperConfig = serde_json::from_str(&json)?;
         info!("Wallpaper config loaded: {:#?}", config);
 
-        let renderers: Rc<RefCell<Vec<hotaru::widget::Renderer>>> =
-            Rc::new(RefCell::new(Vec::new()));
-
-        // Close all windows and rebuild with freshly-read settings.
-        let rebuild = {
-            let app = app.clone();
-            let config = config.clone();
-            let renderers = renderers.clone();
-            let settings_watcher = hotaru::settings_watcher::SettingsWatcher::new();
-            Rc::new(move || {
-                app.windows().into_iter().for_each(|w| w.close());
-                let video_renderer = settings_watcher.video_renderer();
-                let enable_graphics_offload = settings_watcher.is_enable_graphics_offload();
-                let content_fit = settings_watcher.content_fit();
-                app.build_ui(
-                    &config,
-                    video_renderer,
-                    enable_graphics_offload,
-                    content_fit,
-                    &renderers,
-                    launch_mode,
-                );
-            })
-        };
-
-        let monitor_tracker = MonitorTracker::new();
-        let rebuild_clone = rebuild.clone();
-        monitor_tracker.connect_closure(
-            "monitor-changed",
-            false,
-            glib::closure_local!(move |_monitor_tracker: MonitorTracker, list: ListModel| {
-                let monitor_map = list.try_to_monitor_map().unwrap();
-                debug!("monitor changed: {:?}", monitor_map);
-                rebuild_clone();
-            }),
-        );
-
-        // Switching the video renderer rebuilds the wallpaper so the change
-        // takes effect immediately.
-        let rebuild_clone = rebuild.clone();
-        settings_watcher.settings().connect_changed(
-            Some("video-renderer"),
-            move |_settings, _key| {
-                info!("Video renderer setting changed, rebuilding");
-                rebuild_clone();
-            },
-        );
-
-        let renderers_activate = renderers.clone();
-        app.connect_activate(move |app| {
-            let video_renderer = settings_watcher.video_renderer();
-            let enable_graphics_offload = settings_watcher.is_enable_graphics_offload();
-            let content_fit = settings_watcher.content_fit();
-            app.build_ui(
-                &config,
-                video_renderer,
-                enable_graphics_offload,
-                content_fit,
-                &renderers_activate,
-                launch_mode,
-            )
+        let state_for_activate = state.clone();
+        app.connect_activate(move |_app| {
+            state_for_activate.apply(&config, launch_mode);
         });
         app.run();
     }

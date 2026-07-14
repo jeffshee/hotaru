@@ -15,27 +15,9 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::collections::HashMap;
+pub const APPLICATION_ID: &str = "io.github.jeffshee.Hotaru";
+pub const WINDOW_TITLE: &str = "Hotaru Renderer";
 
-use serde::{Deserialize, Serialize};
-
-use crate::model::WallpaperSource;
-
-// TODO: Implementation
-#[allow(dead_code)]
-type SourceConfigMap = HashMap<WallpaperSource, SourceConfig>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct SourceConfig {
-    pub is_mute: bool,
-    pub audio_volume: f32,
-    pub content_fit: ContentFit,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ContentFit {
-    Fill,
-    Contain,
-    Cover,
-}
+/// Steam app id for Wallpaper Engine; its workshop items live under
+/// `steamapps/workshop/content/<this>/<workshop-id>`.
+pub const WPE_WORKSHOP_APP_ID: &str = "431960";
