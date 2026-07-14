@@ -15,19 +15,13 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::cell::RefCell;
 use std::rc::Rc;
-use std::str::FromStr as _;
 use std::sync::mpsc;
 
 use gtk::glib;
-use gtk::prelude::*;
 use tracing::info;
 
-use crate::application::HotaruApplication;
-use crate::model::{LaunchMode, WallpaperConfig};
-use crate::settings_watcher::SettingsWatcher;
-use crate::widget::{Renderer, RendererWidget};
+use crate::state::RendererState;
 
 pub const DBUS_NAME: &str = "io.github.jeffshee.Hotaru";
 pub const DBUS_PATH: &str = "/io/github/jeffshee/Hotaru";
@@ -55,227 +49,30 @@ enum Command {
     },
 }
 
-// --- RendererState: lives on the GLib main thread ---
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PlaybackState {
-    Idle,
-    Playing,
-    Paused,
-}
-
-impl PlaybackState {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            PlaybackState::Idle => "idle",
-            PlaybackState::Playing => "playing",
-            PlaybackState::Paused => "paused",
-        }
-    }
-}
-
-pub struct RendererState {
-    pub app: HotaruApplication,
-    pub renderers: Rc<RefCell<Vec<Renderer>>>,
-    pub config: RefCell<Option<WallpaperConfig>>,
-    pub launch_mode: RefCell<LaunchMode>,
-    pub playback_state: RefCell<PlaybackState>,
-    pub settings_watcher: SettingsWatcher,
-    /// The daemon's main loop. `GApplication::quit()` only stops a loop
-    /// started by `app.run()`, which daemon mode never calls, so Quit must
-    /// stop this loop explicitly.
-    pub main_loop: RefCell<Option<glib::MainLoop>>,
-}
-
-impl RendererState {
-    pub fn new(app: HotaruApplication) -> Rc<Self> {
-        let renderers = Rc::new(RefCell::new(Vec::new()));
-        let settings_watcher = SettingsWatcher::new();
-        settings_watcher.connect_runtime_settings(renderers.clone());
-
-        Rc::new(Self {
-            app,
-            renderers,
-            config: RefCell::new(None),
-            launch_mode: RefCell::new(LaunchMode::default()),
-            playback_state: RefCell::new(PlaybackState::Idle),
-            settings_watcher,
-            main_loop: RefCell::new(None),
-        })
-    }
-
-    /// Rebuild the wallpaper UI from the currently stored config, reading
-    /// renderer/display settings fresh. No-op when no wallpaper is active.
-    /// Used when monitors change or the video-renderer setting is switched.
-    pub fn rebuild_ui(&self) {
-        let Some(config) = self.config.borrow().clone() else {
-            return;
-        };
-        let launch_mode = *self.launch_mode.borrow();
-
-        self.app.windows().into_iter().for_each(|w| w.close());
-
-        let video_renderer = self.settings_watcher.video_renderer();
-        let enable_graphics_offload = self.settings_watcher.is_enable_graphics_offload();
-        let fit = self.settings_watcher.content_fit();
-        self.app.build_ui(
-            &config,
-            video_renderer,
-            enable_graphics_offload,
-            fit,
-            self.settings_watcher.volume(),
-            self.settings_watcher.is_mute(),
-            &self.renderers,
+fn handle_command(state: &RendererState, cmd: Command) {
+    match cmd {
+        Command::ApplyWallpaper {
+            config_json,
             launch_mode,
-        );
-
-        // Defer settings application to avoid GStreamer deadlock, see
-        // apply_wallpaper for details.
-        let volume = self.settings_watcher.volume();
-        let mute = self.settings_watcher.is_mute();
-        let renderers = self.renderers.clone();
-        glib::idle_add_local_once(move || {
-            for renderer in renderers.borrow().iter() {
-                renderer.set_volume(volume);
-                renderer.set_mute(mute);
-            }
-        });
-    }
-
-    pub fn apply_wallpaper(
-        &self,
-        config_json: &str,
-        launch_mode_str: &str,
-    ) -> Result<bool, String> {
-        let config: WallpaperConfig =
-            serde_json::from_str(config_json).map_err(|e| format!("Invalid config JSON: {}", e))?;
-        let launch_mode = LaunchMode::from_str(launch_mode_str)
-            .map_err(|e| format!("Invalid launch mode: {}", e))?;
-
-        info!(
-            "D-Bus: Applying wallpaper with mode {:?}, launch mode {:?}",
-            config.mode, launch_mode
-        );
-
-        // Update state before build_ui so monitor-changed handler sees correct values
-        *self.launch_mode.borrow_mut() = launch_mode;
-        *self.config.borrow_mut() = Some(config.clone());
-
-        // Close existing windows
-        self.app.windows().into_iter().for_each(|w| w.close());
-
-        // Build new UI
-        let video_renderer = self.settings_watcher.video_renderer();
-        let enable_graphics_offload = self.settings_watcher.is_enable_graphics_offload();
-        let fit = self.settings_watcher.content_fit();
-        self.app.build_ui(
-            &config,
-            video_renderer,
-            enable_graphics_offload,
-            fit,
-            self.settings_watcher.volume(),
-            self.settings_watcher.is_mute(),
-            &self.renderers,
-            launch_mode,
-        );
-
-        // Defer settings application to avoid GStreamer deadlock.
-        // build_ui() starts pipeline state transitions via renderer.play(),
-        // and setting properties (volume, mute) during the transition blocks
-        // the main loop. An idle callback runs after the transition completes.
-        let volume = self.settings_watcher.volume();
-        let mute = self.settings_watcher.is_mute();
-        let renderers = self.renderers.clone();
-        glib::idle_add_local_once(move || {
-            for renderer in renderers.borrow().iter() {
-                renderer.set_volume(volume);
-                renderer.set_mute(mute);
-                renderer.set_content_fit(fit);
-            }
-        });
-
-        *self.playback_state.borrow_mut() = PlaybackState::Playing;
-
-        // Persist for auto-restore on next daemon startup
-        self.settings_watcher.set_last_wallpaper_config(config_json);
-        self.settings_watcher.set_last_launch_mode(launch_mode_str);
-
-        Ok(true)
-    }
-
-    fn disable_wallpaper(&self) -> bool {
-        info!("D-Bus: Disabling wallpaper");
-
-        for renderer in self.renderers.borrow().iter() {
-            renderer.stop();
+            reply,
+        } => {
+            let result = state.apply_wallpaper(&config_json, &launch_mode);
+            let _ = reply.send(result);
         }
-
-        self.app.windows().into_iter().for_each(|w| w.close());
-
-        self.renderers.borrow_mut().clear();
-        *self.config.borrow_mut() = None;
-        *self.playback_state.borrow_mut() = PlaybackState::Idle;
-
-        // Clear persisted config
-        self.settings_watcher.set_last_wallpaper_config("");
-        self.settings_watcher.set_last_launch_mode("");
-
-        true
-    }
-
-    fn pause(&self) -> bool {
-        if *self.playback_state.borrow() != PlaybackState::Playing {
-            return false;
+        Command::DisableWallpaper { reply } => {
+            let _ = reply.send(state.disable_wallpaper());
         }
-        info!("D-Bus: Pausing playback");
-        for renderer in self.renderers.borrow().iter() {
-            renderer.pause();
+        Command::Pause { reply } => {
+            let _ = reply.send(state.pause());
         }
-        *self.playback_state.borrow_mut() = PlaybackState::Paused;
-        true
-    }
-
-    fn resume(&self) -> bool {
-        if *self.playback_state.borrow() != PlaybackState::Paused {
-            return false;
+        Command::Resume { reply } => {
+            let _ = reply.send(state.resume());
         }
-        info!("D-Bus: Resuming playback");
-        for renderer in self.renderers.borrow().iter() {
-            renderer.play();
+        Command::Quit => {
+            state.quit();
         }
-        *self.playback_state.borrow_mut() = PlaybackState::Playing;
-        true
-    }
-
-    fn handle_command(&self, cmd: Command) {
-        match cmd {
-            Command::ApplyWallpaper {
-                config_json,
-                launch_mode,
-                reply,
-            } => {
-                let result = self.apply_wallpaper(&config_json, &launch_mode);
-                let _ = reply.send(result);
-            }
-            Command::DisableWallpaper { reply } => {
-                let _ = reply.send(self.disable_wallpaper());
-            }
-            Command::Pause { reply } => {
-                let _ = reply.send(self.pause());
-            }
-            Command::Resume { reply } => {
-                let _ = reply.send(self.resume());
-            }
-            Command::Quit => {
-                info!("D-Bus: Quitting");
-                self.app.quit();
-                if let Some(main_loop) = self.main_loop.borrow().as_ref() {
-                    main_loop.quit();
-                }
-            }
-            Command::GetState { reply } => {
-                let _ = reply.send(self.playback_state.borrow().as_str().to_string());
-            }
+        Command::GetState { reply } => {
+            let _ = reply.send(state.playback_state.borrow().as_str().to_string());
         }
     }
 }
@@ -406,7 +203,7 @@ pub fn register_dbus_service(state: Rc<RendererState>) {
     // Process commands on the GLib main thread
     glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
         while let Ok(cmd) = cmd_rx.try_recv() {
-            state.handle_command(cmd);
+            handle_command(&state, cmd);
         }
         glib::ControlFlow::Continue
     });

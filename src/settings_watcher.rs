@@ -27,6 +27,17 @@ use crate::constant::APPLICATION_ID;
 use crate::model::VideoRenderer;
 use crate::widget::{Renderer, RendererWidget};
 
+/// A point-in-time snapshot of the settings a renderer build needs.
+#[derive(Debug, Clone, Copy)]
+pub struct RenderSettings {
+    pub video_renderer: VideoRenderer,
+    pub enable_graphics_offload: bool,
+    pub content_fit: gtk::ContentFit,
+    /// Audio volume (0-100).
+    pub volume: i32,
+    pub mute: bool,
+}
+
 /// Watches the Hotaru GSettings schema and applies changes to active renderers.
 pub struct SettingsWatcher {
     settings: gio::Settings,
@@ -46,6 +57,17 @@ impl SettingsWatcher {
 
     pub fn settings(&self) -> &gio::Settings {
         &self.settings
+    }
+
+    /// Read all renderer-build settings at once.
+    pub fn snapshot(&self) -> RenderSettings {
+        RenderSettings {
+            video_renderer: self.video_renderer(),
+            enable_graphics_offload: self.is_enable_graphics_offload(),
+            content_fit: self.content_fit(),
+            volume: self.volume(),
+            mute: self.is_mute(),
+        }
     }
 
     pub fn video_renderer(&self) -> VideoRenderer {

@@ -15,19 +15,42 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use serde::{Deserialize, Serialize};
-
 use crate::model::{
     MonitorConfig, MonitorInfo, MonitorMap, WallpaperConfig, WallpaperMode, WallpaperSource,
     WallpaperType,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// The set of windows to create for a wallpaper config on the current
+/// monitors. Windows are ordered primaries-first, so a consumer building
+/// them in order always has a clone's source renderer available.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowLayout {
     pub windows: Vec<WindowInfo>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Window position and size, in the compositor's global coordinate space.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowGeometry {
+    pub x: i32,
+    pub y: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl From<MonitorInfo> for WindowGeometry {
+    fn from(info: MonitorInfo) -> Self {
+        Self {
+            x: info.x,
+            y: info.y,
+            width: info.width,
+            height: info.height,
+        }
+    }
+}
+
+/// The visible region of an oversized canvas (stretch mode): the child is
+/// allocated at canvas size and shifted by the offset, clipped to the window.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Viewport {
     pub offset_x: i32,
     pub offset_y: i32,
@@ -35,29 +58,27 @@ pub struct Viewport {
     pub canvas_height: i32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum WindowInfo {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowInfo {
+    /// Connector name of the monitor this window covers (e.g. "DP-1").
+    pub monitor: String,
+    pub geometry: WindowGeometry,
+    pub title: String,
+    pub viewport: Option<Viewport>,
+    pub role: WindowRole,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WindowRole {
+    /// Runs a renderer for the wallpaper source.
     Primary {
-        monitor: String,
-        window_x: i32,
-        window_y: i32,
-        window_width: i32,
-        window_height: i32,
-        window_title: String,
         wallpaper_type: WallpaperType,
         wallpaper_source: WallpaperSource,
-        viewport: Option<Viewport>,
     },
+    /// Mirrors the primary renderer of another monitor.
     Clone {
-        monitor: String,
-        window_x: i32,
-        window_y: i32,
-        window_width: i32,
-        window_height: i32,
-        window_title: String,
-        clone_source: String,
-        viewport: Option<Viewport>,
+        /// Monitor (connector name) whose primary renderer to mirror.
+        source: String,
     },
 }
 
@@ -75,30 +96,23 @@ impl WindowLayout {
     fn handle_per_monitor(config: &WallpaperConfig, monitor_map: &MonitorMap) -> Self {
         let mut windows = Vec::new();
 
-        for monitor in &config.monitors {
+        for monitor_config in &config.monitors {
             if let MonitorConfig::Primary {
                 monitor,
                 wallpaper_type,
                 wallpaper_source,
-            } = monitor
+            } = monitor_config
             {
-                if let Some(MonitorInfo {
-                    x,
-                    y,
-                    width,
-                    height,
-                }) = monitor_map.get(monitor)
-                {
-                    windows.push(WindowInfo::Primary {
+                if let Some(info) = monitor_map.get(monitor) {
+                    windows.push(WindowInfo {
                         monitor: monitor.clone(),
-                        window_x: *x,
-                        window_y: *y,
-                        window_width: *width,
-                        window_height: *height,
-                        window_title: format!("Live Wallpaper - {monitor}"),
-                        wallpaper_type: *wallpaper_type,
-                        wallpaper_source: wallpaper_source.clone(),
+                        geometry: (*info).into(),
+                        title: format!("Live Wallpaper - {monitor}"),
                         viewport: None,
+                        role: WindowRole::Primary {
+                            wallpaper_type: *wallpaper_type,
+                            wallpaper_source: wallpaper_source.clone(),
+                        },
                     })
                 }
             }
@@ -121,51 +135,37 @@ impl WindowLayout {
             .iter()
             .find(|m| matches!(m, MonitorConfig::Primary { .. }))
         {
-            if let Some(MonitorInfo {
-                x,
-                y,
-                width,
-                height,
-            }) = monitor_map.get(monitor)
-            {
+            if let Some(info) = monitor_map.get(monitor) {
                 primary = Some(monitor.clone());
 
-                windows.push(WindowInfo::Primary {
+                windows.push(WindowInfo {
                     monitor: monitor.clone(),
-                    window_x: *x,
-                    window_y: *y,
-                    window_width: *width,
-                    window_height: *height,
-                    window_title: format!("Live Wallpaper - {monitor}"),
-                    wallpaper_type: *wallpaper_type,
-                    wallpaper_source: wallpaper_source.clone(),
+                    geometry: (*info).into(),
+                    title: format!("Live Wallpaper - {monitor}"),
                     viewport: None,
+                    role: WindowRole::Primary {
+                        wallpaper_type: *wallpaper_type,
+                        wallpaper_source: wallpaper_source.clone(),
+                    },
                 })
             }
         }
 
         // Add the clones
         if let Some(primary_monitor) = primary {
-            for monitor in &config.monitors {
-                if let MonitorConfig::Clone { monitor, .. } = monitor {
-                    if let Some(MonitorInfo {
-                        x,
-                        y,
-                        width,
-                        height,
-                    }) = monitor_map.get(monitor)
-                    {
-                        windows.push(WindowInfo::Clone {
+            for monitor_config in &config.monitors {
+                if let MonitorConfig::Clone { monitor, .. } = monitor_config {
+                    if let Some(info) = monitor_map.get(monitor) {
+                        windows.push(WindowInfo {
                             monitor: monitor.clone(),
-                            window_x: *x,
-                            window_y: *y,
-                            window_width: *width,
-                            window_height: *height,
-                            window_title: format!(
+                            geometry: (*info).into(),
+                            title: format!(
                                 "Live Wallpaper - {monitor} (Clone of {primary_monitor})"
                             ),
-                            clone_source: primary_monitor.clone(),
                             viewport: None,
+                            role: WindowRole::Clone {
+                                source: primary_monitor.clone(),
+                            },
                         })
                     }
                 }
@@ -207,7 +207,7 @@ impl WindowLayout {
 
         let mut primary_name = None;
 
-        for (i, (monitor_name, info)) in monitors.iter().enumerate() {
+        for (monitor_name, info) in monitors {
             let viewport = Some(Viewport {
                 offset_x: info.x,
                 offset_y: info.y,
@@ -215,31 +215,26 @@ impl WindowLayout {
                 canvas_height: box_height,
             });
 
-            if i == 0 {
-                primary_name = Some(monitor_name.to_string());
-                windows.push(WindowInfo::Primary {
-                    monitor: monitor_name.to_string(),
-                    window_x: info.x,
-                    window_y: info.y,
-                    window_width: info.width,
-                    window_height: info.height,
-                    window_title: format!("Live Wallpaper - {} (Stretch)", monitor_name),
-                    wallpaper_type,
-                    wallpaper_source: wallpaper_source.clone(),
-                    viewport,
-                });
-            } else {
-                windows.push(WindowInfo::Clone {
-                    monitor: monitor_name.to_string(),
-                    window_x: info.x,
-                    window_y: info.y,
-                    window_width: info.width,
-                    window_height: info.height,
-                    window_title: format!("Live Wallpaper - {} (Stretch)", monitor_name),
-                    clone_source: primary_name.as_ref().unwrap().clone(),
-                    viewport,
-                });
-            }
+            let role = match &primary_name {
+                None => {
+                    primary_name = Some(monitor_name.clone());
+                    WindowRole::Primary {
+                        wallpaper_type,
+                        wallpaper_source: wallpaper_source.clone(),
+                    }
+                }
+                Some(primary) => WindowRole::Clone {
+                    source: primary.clone(),
+                },
+            };
+
+            windows.push(WindowInfo {
+                monitor: monitor_name.clone(),
+                geometry: (*info).into(),
+                title: format!("Live Wallpaper - {} (Stretch)", monitor_name),
+                viewport,
+                role,
+            });
         }
 
         Self { windows }
@@ -303,31 +298,33 @@ mod tests {
         let mut dp2_found = false;
 
         for window in &layout.windows {
-            match window {
-                WindowInfo::Primary {
-                    monitor,
-                    window_x,
-                    window_y,
-                    window_width,
-                    window_height,
-                    ..
-                } => {
-                    if monitor == "DP-1" {
-                        assert_eq!(*window_x, 0);
-                        assert_eq!(*window_y, 0);
-                        assert_eq!(*window_width, 1920);
-                        assert_eq!(*window_height, 1080);
-                        dp1_found = true;
+            assert!(
+                matches!(window.role, WindowRole::Primary { .. }),
+                "Unexpected clone window in per-monitor mode"
+            );
+            if window.monitor == "DP-1" {
+                assert_eq!(
+                    window.geometry,
+                    WindowGeometry {
+                        x: 0,
+                        y: 0,
+                        width: 1920,
+                        height: 1080
                     }
-                    if monitor == "DP-2" {
-                        assert_eq!(*window_x, 1920);
-                        assert_eq!(*window_y, 0);
-                        assert_eq!(*window_width, 2560);
-                        assert_eq!(*window_height, 1440);
-                        dp2_found = true;
+                );
+                dp1_found = true;
+            }
+            if window.monitor == "DP-2" {
+                assert_eq!(
+                    window.geometry,
+                    WindowGeometry {
+                        x: 1920,
+                        y: 0,
+                        width: 2560,
+                        height: 1440
                     }
-                }
-                _ => panic!("Unexpected clone window in per-monitor mode"),
+                );
+                dp2_found = true;
             }
         }
 
@@ -382,18 +379,14 @@ mod tests {
         let mut clone_found = false;
 
         for window in &layout.windows {
-            match window {
-                WindowInfo::Primary { monitor, .. } => {
-                    assert_eq!(monitor, "DP-1");
+            match &window.role {
+                WindowRole::Primary { .. } => {
+                    assert_eq!(window.monitor, "DP-1");
                     primary_found = true;
                 }
-                WindowInfo::Clone {
-                    monitor,
-                    clone_source,
-                    ..
-                } => {
-                    assert_eq!(monitor, "DP-2");
-                    assert_eq!(clone_source, "DP-1");
+                WindowRole::Clone { source } => {
+                    assert_eq!(window.monitor, "DP-2");
+                    assert_eq!(source, "DP-1");
                     clone_found = true;
                 }
             }
@@ -454,45 +447,33 @@ mod tests {
         let expected_canvas = (5920, 2680);
 
         // First monitor (DP-1) is Primary
-        if let WindowInfo::Primary {
-            monitor,
-            window_x,
-            window_y,
-            window_width,
-            window_height,
-            viewport,
-            ..
-        } = &layout.windows[0]
-        {
-            assert_eq!(monitor, "DP-1");
-            assert_eq!(*window_x, 1920);
-            assert_eq!(*window_y, 600);
-            assert_eq!(*window_width, 2560);
-            assert_eq!(*window_height, 1440);
-            let vp = viewport.as_ref().unwrap();
-            assert_eq!(vp.offset_x, 1920);
-            assert_eq!(vp.offset_y, 600);
-            assert_eq!(vp.canvas_width, expected_canvas.0);
-            assert_eq!(vp.canvas_height, expected_canvas.1);
-        } else {
-            panic!("Expected primary window for first monitor");
-        }
+        let first = &layout.windows[0];
+        assert!(matches!(first.role, WindowRole::Primary { .. }));
+        assert_eq!(first.monitor, "DP-1");
+        assert_eq!(
+            first.geometry,
+            WindowGeometry {
+                x: 1920,
+                y: 600,
+                width: 2560,
+                height: 1440
+            }
+        );
+        let vp = first.viewport.as_ref().unwrap();
+        assert_eq!(vp.offset_x, 1920);
+        assert_eq!(vp.offset_y, 600);
+        assert_eq!(vp.canvas_width, expected_canvas.0);
+        assert_eq!(vp.canvas_height, expected_canvas.1);
 
         // Remaining monitors are Clones
         for window in &layout.windows[1..] {
-            if let WindowInfo::Clone {
-                clone_source,
-                viewport,
-                ..
-            } = window
-            {
-                assert_eq!(clone_source, "DP-1");
-                let vp = viewport.as_ref().unwrap();
-                assert_eq!(vp.canvas_width, expected_canvas.0);
-                assert_eq!(vp.canvas_height, expected_canvas.1);
-            } else {
+            let WindowRole::Clone { source } = &window.role else {
                 panic!("Expected clone window for non-primary monitor");
-            }
+            };
+            assert_eq!(source, "DP-1");
+            let vp = window.viewport.as_ref().unwrap();
+            assert_eq!(vp.canvas_width, expected_canvas.0);
+            assert_eq!(vp.canvas_height, expected_canvas.1);
         }
     }
 }
