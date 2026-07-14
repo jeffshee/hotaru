@@ -16,7 +16,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 use std::rc::Rc;
-use std::sync::mpsc;
 
 use gtk::glib;
 use tracing::info;
@@ -26,30 +25,32 @@ use crate::state::RendererState;
 pub const DBUS_NAME: &str = "io.github.jeffshee.Hotaru";
 pub const DBUS_PATH: &str = "/io/github/jeffshee/Hotaru";
 
-// --- Commands sent from D-Bus thread to GLib main thread ---
+// --- Commands sent from the D-Bus thread to the GLib main thread ---
 
 enum Command {
     ApplyWallpaper {
         config_json: String,
         launch_mode: String,
-        reply: mpsc::Sender<Result<bool, String>>,
+        reply: async_channel::Sender<Result<bool, String>>,
     },
     DisableWallpaper {
-        reply: mpsc::Sender<bool>,
+        reply: async_channel::Sender<bool>,
     },
     Pause {
-        reply: mpsc::Sender<bool>,
+        reply: async_channel::Sender<bool>,
     },
     Resume {
-        reply: mpsc::Sender<bool>,
+        reply: async_channel::Sender<bool>,
     },
     Quit,
     GetState {
-        reply: mpsc::Sender<String>,
+        reply: async_channel::Sender<String>,
     },
 }
 
 fn handle_command(state: &RendererState, cmd: Command) {
+    // Replies use send_blocking: each reply channel has capacity 1 and a
+    // single send, so this never actually blocks the main thread.
     match cmd {
         Command::ApplyWallpaper {
             config_json,
@@ -57,22 +58,22 @@ fn handle_command(state: &RendererState, cmd: Command) {
             reply,
         } => {
             let result = state.apply_wallpaper(&config_json, &launch_mode);
-            let _ = reply.send(result);
+            let _ = reply.send_blocking(result);
         }
         Command::DisableWallpaper { reply } => {
-            let _ = reply.send(state.disable_wallpaper());
+            let _ = reply.send_blocking(state.disable_wallpaper());
         }
         Command::Pause { reply } => {
-            let _ = reply.send(state.pause());
+            let _ = reply.send_blocking(state.pause());
         }
         Command::Resume { reply } => {
-            let _ = reply.send(state.resume());
+            let _ = reply.send_blocking(state.resume());
         }
         Command::Quit => {
             state.quit();
         }
         Command::GetState { reply } => {
-            let _ = reply.send(state.playback_state.borrow().as_str().to_string());
+            let _ = reply.send_blocking(state.playback_state.borrow().as_str().to_string());
         }
     }
 }
@@ -80,14 +81,28 @@ fn handle_command(state: &RendererState, cmd: Command) {
 // --- D-Bus interface (Send + Sync, communicates via channel) ---
 
 struct RendererService {
-    cmd_tx: mpsc::SyncSender<Command>,
+    cmd_tx: async_channel::Sender<Command>,
     /// Connection reference used to emit PropertiesChanged signals.
     conn: std::sync::Mutex<Option<zbus::Connection>>,
 }
 
-// SAFETY: RendererService only contains Send + Sync types
-unsafe impl Send for RendererService {}
-unsafe impl Sync for RendererService {}
+impl RendererService {
+    /// Send a command to the main thread and await its reply.
+    async fn request<R>(
+        &self,
+        make_command: impl FnOnce(async_channel::Sender<R>) -> Command,
+    ) -> zbus::fdo::Result<R> {
+        let (reply_tx, reply_rx) = async_channel::bounded(1);
+        self.cmd_tx
+            .send(make_command(reply_tx))
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
+        reply_rx
+            .recv()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))
+    }
+}
 
 #[zbus::interface(name = "io.github.jeffshee.Hotaru.Renderer")]
 impl RendererService {
@@ -96,18 +111,15 @@ impl RendererService {
         config_json: &str,
         launch_mode: &str,
     ) -> zbus::fdo::Result<bool> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.cmd_tx
-            .send(Command::ApplyWallpaper {
-                config_json: config_json.to_string(),
-                launch_mode: launch_mode.to_string(),
-                reply: reply_tx,
+        let config_json = config_json.to_string();
+        let launch_mode = launch_mode.to_string();
+        let result = self
+            .request(|reply| Command::ApplyWallpaper {
+                config_json,
+                launch_mode,
+                reply,
             })
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
-
-        let result = reply_rx
-            .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?
+            .await?
             .map_err(zbus::fdo::Error::Failed)?;
 
         self.emit_state_changed().await;
@@ -115,43 +127,21 @@ impl RendererService {
     }
 
     async fn disable_wallpaper(&self) -> zbus::fdo::Result<bool> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.cmd_tx
-            .send(Command::DisableWallpaper { reply: reply_tx })
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
-
-        let result = reply_rx
-            .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?;
-
+        let result = self
+            .request(|reply| Command::DisableWallpaper { reply })
+            .await?;
         self.emit_state_changed().await;
         Ok(result)
     }
 
     async fn pause(&self) -> zbus::fdo::Result<bool> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.cmd_tx
-            .send(Command::Pause { reply: reply_tx })
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
-
-        let result = reply_rx
-            .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?;
-
+        let result = self.request(|reply| Command::Pause { reply }).await?;
         self.emit_state_changed().await;
         Ok(result)
     }
 
     async fn resume(&self) -> zbus::fdo::Result<bool> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.cmd_tx
-            .send(Command::Resume { reply: reply_tx })
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
-
-        let result = reply_rx
-            .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))?;
-
+        let result = self.request(|reply| Command::Resume { reply }).await?;
         self.emit_state_changed().await;
         Ok(result)
     }
@@ -159,19 +149,13 @@ impl RendererService {
     async fn quit(&self) -> zbus::fdo::Result<()> {
         self.cmd_tx
             .send(Command::Quit)
+            .await
             .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))
     }
 
     #[zbus(property)]
     async fn state(&self) -> zbus::fdo::Result<String> {
-        let (reply_tx, reply_rx) = mpsc::channel();
-        self.cmd_tx
-            .send(Command::GetState { reply: reply_tx })
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel send error: {}", e)))?;
-
-        reply_rx
-            .recv()
-            .map_err(|e| zbus::fdo::Error::Failed(format!("Channel recv error: {}", e)))
+        self.request(|reply| Command::GetState { reply }).await
     }
 }
 
@@ -198,14 +182,14 @@ impl RendererService {
 /// Sets up a command channel: the D-Bus service sends commands, and
 /// the GLib main loop processes them on the main thread.
 pub fn register_dbus_service(state: Rc<RendererState>) {
-    let (cmd_tx, cmd_rx) = mpsc::sync_channel::<Command>(32);
+    let (cmd_tx, cmd_rx) = async_channel::bounded::<Command>(32);
 
-    // Process commands on the GLib main thread
-    glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
-        while let Ok(cmd) = cmd_rx.try_recv() {
+    // Process commands on the GLib main thread as they arrive (the
+    // channel integrates with the main loop; no polling).
+    glib::spawn_future_local(async move {
+        while let Ok(cmd) = cmd_rx.recv().await {
             handle_command(&state, cmd);
         }
-        glib::ControlFlow::Continue
     });
 
     // Spawn the zbus connection on a background thread.

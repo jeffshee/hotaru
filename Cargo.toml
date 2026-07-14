@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.101"
+async-channel = "2.5.0"
 async-io = "2.6.0"
 clap = { version = "4.5.58", features = ["derive"] }
 enum_dispatch = "0.3.13"

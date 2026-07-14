@@ -177,11 +177,6 @@ pub struct Position {
 }
 
 mod imp {
-    use crate::constant::{
-        LAUNCH_MODE_GNOME_EXT_HANABI, LAUNCH_MODE_WAYLAND_LAYER_SHELL, LAUNCH_MODE_WINDOWED,
-        LAUNCH_MODE_X11_DESKTOP,
-    };
-
     use super::*;
     use glib::Properties;
     use gtk::{
@@ -194,7 +189,7 @@ mod imp {
     #[properties(wrapper_type = super::HotaruApplicationWindow)]
     pub struct HotaruApplicationWindow {
         #[property(get, construct_only)]
-        launch_mode: RefCell<String>,
+        launch_mode: RefCell<LaunchMode>,
         #[property(get, set)]
         monitor_connector: RefCell<String>,
         #[property(get, set)]
@@ -228,8 +223,8 @@ mod imp {
             );
             obj.set_css_classes(&["black-bg"]);
 
-            match obj.launch_mode().as_str() {
-                LAUNCH_MODE_X11_DESKTOP => {
+            match obj.launch_mode() {
+                LaunchMode::X11Desktop => {
                     obj.connect_realize(move |window| {
                         window.set_x11_window_type_hint();
                         window.clear_x11_frame_extents();
@@ -237,7 +232,7 @@ mod imp {
                         window.set_x11_window_position(position.x, position.y);
                     });
                 }
-                LAUNCH_MODE_WAYLAND_LAYER_SHELL => {
+                LaunchMode::WaylandLayerShell => {
                     obj.init_layer_shell();
                     obj.set_layer(gtk4_layer_shell::Layer::Background);
                     obj.set_anchor(gtk4_layer_shell::Edge::Left, true);
@@ -261,18 +256,15 @@ mod imp {
                         }
                     });
                 }
-                LAUNCH_MODE_GNOME_EXT_HANABI => {
+                LaunchMode::GnomeExtHanabi => {
                     obj.connect_realize(move |window| {
                         window.set_hanabi_window_title();
                     });
                 }
-                LAUNCH_MODE_WINDOWED => {
+                LaunchMode::Windowed => {
                     obj.connect_realize(move |window| {
                         window.set_decorated(true);
                     });
-                }
-                launch_mode => {
-                    error!("Unknown launch mode: {}", launch_mode);
                 }
             }
         }
@@ -289,18 +281,15 @@ mod imp {
                 debug!("position_notify");
                 let position = window.position();
 
-                match window.launch_mode().as_str() {
-                    LAUNCH_MODE_X11_DESKTOP => {
+                match window.launch_mode() {
+                    LaunchMode::X11Desktop => {
                         window.set_x11_window_position(position.x, position.y);
                     }
-                    LAUNCH_MODE_GNOME_EXT_HANABI => {
+                    LaunchMode::GnomeExtHanabi => {
                         window.set_hanabi_window_title();
                     }
-                    LAUNCH_MODE_WAYLAND_LAYER_SHELL | LAUNCH_MODE_WINDOWED => {
+                    LaunchMode::WaylandLayerShell | LaunchMode::Windowed => {
                         // No position updates needed
-                    }
-                    launch_mode => {
-                        error!("Unknown launch mode: {}", launch_mode);
                     }
                 }
             });
