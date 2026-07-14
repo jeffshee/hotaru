@@ -83,13 +83,15 @@ impl WpePackage {
         let parsed: ProjectJson = serde_json::from_str(&data)
             .with_context(|| format!("parsing {}", project.display()))?;
 
-        let kind = match parsed.kind.as_str() {
+        // Wallpaper Engine capitalizes the type inconsistently ("scene" vs
+        // "Scene"), so match case-insensitively.
+        let kind = match parsed.kind.to_ascii_lowercase().as_str() {
             "scene" => WpeType::Scene,
             "video" => WpeType::Video,
             "web" => WpeType::Web,
-            other => bail!(
+            _ => bail!(
                 "unsupported Wallpaper Engine type {:?} in {}",
-                other,
+                parsed.kind,
                 project.display()
             ),
         };
