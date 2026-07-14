@@ -128,26 +128,30 @@ impl Renderer {
                     scene_unsupported()
                 }
             }
-            WpeType::Video | WpeType::Web => {
-                let entry = match package.entry() {
-                    Ok(entry) => entry,
-                    Err(e) => {
-                        tracing::error!("Invalid Wallpaper Engine package: {:#}", e);
-                        return blank();
-                    }
-                };
-                let kind = if package.kind == WpeType::Video {
-                    WallpaperType::Video
-                } else {
-                    WallpaperType::Web
-                };
-                Self::with_filepath(
+            WpeType::Video => match package.entry() {
+                Ok(entry) => Self::with_filepath(
                     &entry.to_string_lossy(),
-                    &kind,
+                    &WallpaperType::Video,
                     video_renderer,
                     enable_graphics_offload,
-                )
-            }
+                ),
+                Err(e) => {
+                    tracing::error!("Invalid Wallpaper Engine package: {:#}", e);
+                    blank()
+                }
+            },
+            WpeType::Web => match package.entry() {
+                // Web packages get the Wallpaper Engine JS API and their
+                // default properties injected (see web.rs).
+                Ok(entry) => Self::Web(WebWidget::with_wpe(
+                    &entry.to_string_lossy(),
+                    &package.user_properties_json(),
+                )),
+                Err(e) => {
+                    tracing::error!("Invalid Wallpaper Engine package: {:#}", e);
+                    blank()
+                }
+            },
         }
     }
 

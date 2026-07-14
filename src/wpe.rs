@@ -51,6 +51,14 @@ struct ProjectJson {
     #[serde(rename = "type")]
     kind: String,
     file: Option<String>,
+    #[serde(default)]
+    general: General,
+}
+
+#[derive(Deserialize, Default)]
+struct General {
+    #[serde(default)]
+    properties: serde_json::Map<String, serde_json::Value>,
 }
 
 /// A resolved Wallpaper Engine package.
@@ -61,6 +69,8 @@ pub struct WpePackage {
     /// Entry file relative to `dir` (the video file or `index.html`); unused
     /// for scene packages, which are handed to the engine as a directory.
     file: Option<String>,
+    /// Raw `general.properties` from project.json (used for web packages).
+    properties: serde_json::Map<String, serde_json::Value>,
 }
 
 impl WpePackage {
@@ -100,6 +110,7 @@ impl WpePackage {
             dir,
             kind,
             file: parsed.file,
+            properties: parsed.general.properties,
         })
     }
 
@@ -110,6 +121,22 @@ impl WpePackage {
             .as_ref()
             .context("project.json has no \"file\" entry")?;
         Ok(self.dir.join(file))
+    }
+
+    /// The default user properties as the argument Wallpaper Engine passes to
+    /// `wallpaperPropertyListener.applyUserProperties` — `{name: {value: …}}`
+    /// built from each property's default `value` in project.json. Serialized
+    /// as a JSON string ready to embed in injected JavaScript.
+    pub fn user_properties_json(&self) -> String {
+        let mut out = serde_json::Map::new();
+        for (name, def) in &self.properties {
+            if let Some(value) = def.get("value") {
+                let mut entry = serde_json::Map::new();
+                entry.insert("value".to_string(), value.clone());
+                out.insert(name.clone(), serde_json::Value::Object(entry));
+            }
+        }
+        serde_json::Value::Object(out).to_string()
     }
 }
 

@@ -37,6 +37,19 @@ impl RendererWidgetBuilder for WebWidget {
     }
 }
 
+impl WebWidget {
+    /// Build a web wallpaper for a Wallpaper Engine package: load `filepath`
+    /// and deliver `properties` (JSON `{name:{value:…}}`) to the wallpaper's
+    /// `applyUserProperties` once loaded.
+    pub fn with_wpe(filepath: &str, properties: &str) -> Self {
+        let uri = gio::File::for_path(filepath).uri();
+        Object::builder()
+            .property("uri", &uri)
+            .property("wpe-properties", properties)
+            .build()
+    }
+}
+
 impl RendererWidget for WebWidget {
     fn mirror(&self, enable_graphics_offload: bool, content_fit: gtk::ContentFit) -> gtk::Box {
         let widget = gtk::Box::builder().build();
@@ -85,9 +98,41 @@ mod imp {
     pub struct WebWidget {
         #[property(get, set)]
         uri: RefCell<String>,
+        /// Wallpaper Engine user properties as a JSON object
+        /// (`{name:{value:…}}`), delivered to the wallpaper's
+        /// `applyUserProperties` after load. Empty for non-WPE web wallpapers.
+        #[property(get, set, name = "wpe-properties")]
+        wpe_properties: RefCell<String>,
         #[property(get)]
         webview: RefCell<WebView>,
     }
+
+    /// Minimal Wallpaper Engine JS API, injected at document-start so web
+    /// wallpapers that call these globals don't throw. Property delivery
+    /// (`applyUserProperties`) happens after load, from Rust.
+    const WPE_API_STUB: &str = r#"
+(function () {
+  if (window.__hotaruWpeStub) return;
+  window.__hotaruWpeStub = true;
+  var noop = function () {};
+  // Feed a zeroed 128-sample spectrum (64 L + 64 R) so audio-reactive
+  // wallpapers run (flat, not reactive — hotaru has no spectrum feed).
+  window.wallpaperRegisterAudioListener = function (cb) {
+    if (typeof cb !== 'function') return;
+    var silent = new Array(128).fill(0);
+    if (window.__hotaruAudioTimer) clearInterval(window.__hotaruAudioTimer);
+    window.__hotaruAudioTimer = setInterval(function () {
+      try { cb(silent); } catch (e) {}
+    }, 33);
+  };
+  window.wallpaperRequestRandomFileForProperty = noop;
+  window.wallpaperRegisterMediaStatusListener = noop;
+  window.wallpaperRegisterMediaPropertiesListener = noop;
+  window.wallpaperRegisterMediaThumbnailListener = noop;
+  window.wallpaperRegisterMediaTimelineListener = noop;
+  window.wallpaperRegisterMediaPlaybackListener = noop;
+})();
+"#;
 
     impl WebWidget {
         pub fn start(&self) {
@@ -109,7 +154,20 @@ mod imp {
             self.parent_constructed();
 
             let obj = self.obj();
-            let webview = WebView::builder().build();
+
+            // Inject the Wallpaper Engine JS API stub before any page script
+            // runs, so WPE web wallpapers that call these globals don't throw.
+            let content_manager = webkit::UserContentManager::new();
+            content_manager.add_script(&webkit::UserScript::new(
+                WPE_API_STUB,
+                webkit::UserContentInjectedFrames::AllFrames,
+                webkit::UserScriptInjectionTime::Start,
+                &[],
+                &[],
+            ));
+            let webview = WebView::builder()
+                .user_content_manager(&content_manager)
+                .build();
 
             // WPE web wallpapers load local assets (Spine skeletons/atlases,
             // textures, JSON) via XHR/fetch, which WebKit blocks for file://
@@ -120,7 +178,40 @@ mod imp {
             let settings = webkit::Settings::new();
             settings.set_allow_file_access_from_file_urls(true);
             settings.set_allow_universal_access_from_file_urls(true);
+            // WPE web wallpapers are commonly WebGL (Spine, canvas); force
+            // hardware-accelerated compositing for correct/smooth rendering.
+            settings.set_hardware_acceleration_policy(webkit::HardwareAccelerationPolicy::Always);
             webview.set_settings(&settings);
+
+            // Once the page has loaded, hand the wallpaper its properties the
+            // way Wallpaper Engine does — this is what drives property-gated
+            // rendering (e.g. which model/quality to load).
+            webview.connect_load_changed(glib::clone!(
+                #[weak(rename_to = imp)]
+                self,
+                move |webview, event| {
+                    if event != webkit::LoadEvent::Finished {
+                        return;
+                    }
+                    let props = imp.wpe_properties.borrow();
+                    if props.is_empty() {
+                        return;
+                    }
+                    let js = format!(
+                        "(function(){{var l=window.wallpaperPropertyListener;if(!l)return;\
+                         if(l.applyGeneralProperties)l.applyGeneralProperties({{fps:60}});\
+                         if(l.applyUserProperties)l.applyUserProperties({props});}})();",
+                        props = &*props
+                    );
+                    webview.evaluate_javascript(
+                        &js,
+                        None,
+                        None,
+                        gio::Cancellable::NONE,
+                        |_result| {},
+                    );
+                }
+            ));
 
             webview.set_hexpand(true);
             webview.set_vexpand(true);
