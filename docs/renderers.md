@@ -158,6 +158,26 @@ A WebKitGTK `WebView` loading the configured URI (local file or remote).
 Playback controls are no-ops. `mirror()` uses a `gtk::WidgetPaintable` of
 the WebView.
 
+For **`wpe` packages of web type**, the WebView also emulates the Wallpaper
+Engine browser environment (`WebWidget::with_wpe`), which stock
+linux-wallpaperengine does not implement at all:
+
+- **Local file access** — `allow-file-access-from-file-urls` /
+  `allow-universal-access` so wallpapers can XHR/fetch their own assets
+  (Spine skeletons/atlases, JSON) from the `file://` package.
+- **WPE JS API shim** — a user script injected at document-start defines the
+  `wallpaperRegister*` globals (media listeners as no-ops; the audio listener
+  fed a zeroed 128-sample spectrum so audio-reactive wallpapers run flat).
+- **Property delivery** — after load, hotaru calls
+  `window.wallpaperPropertyListener.applyUserProperties(defaults)` with the
+  package's `general.properties` defaults (from `wpe.rs`). This is what drives
+  property-gated rendering, e.g. which model/quality a wallpaper loads.
+- **Hardware-accelerated compositing** forced on (WebGL wallpapers glitch on
+  first paint under the default software→GPU promotion).
+
+This is emulation: audio-reactive and media-integration wallpapers run but
+don't react (no real spectrum / now-playing feed).
+
 ## SceneWidget (`src/widget/scene.rs`, cargo feature `wpe`)
 
 Renders **scene**-type Wallpaper Engine packages (the delegation target above)
