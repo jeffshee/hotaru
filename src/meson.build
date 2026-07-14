@@ -8,28 +8,13 @@ gnome.compile_resources('hotaru',
   install_dir: pkgdatadir,
 )
 
-conf = configuration_data()
-conf.set_quoted('VERSION', meson.project_version())
-conf.set_quoted('PKGDATADIR', pkgdatadir)
-
-configure_file(
-    input: 'config.rs.in',
-    output: 'config.rs',
-    configuration: conf
-)
-
-# Copy the config.rs output to the source directory.
-run_command(
-  'cp',
-  meson.project_build_root() / 'src' / 'config.rs',
-  meson.project_source_root() / 'src' / 'config.rs',
-  check: true
-)
-
 cargo_bin  = find_program('cargo')
 cargo_opt  = [ '--manifest-path', meson.project_source_root() / 'Cargo.toml' ]
 cargo_opt += [ '--target-dir', meson.project_build_root()  / 'src' ]
 cargo_env  = [ 'CARGO_HOME=' + meson.project_build_root()  / 'cargo-home' ]
+# Build-time configuration, read by src/config.rs via option_env!.
+cargo_env += [ 'HOTARU_VERSION=' + meson.project_version() ]
+cargo_env += [ 'HOTARU_PKGDATADIR=' + pkgdatadir ]
 
 if not get_option('mpv')
   cargo_opt += [ '--no-default-features', '--features', 'base' ]

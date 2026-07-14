@@ -15,27 +15,19 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-use std::collections::HashMap;
+//! Build-time configuration. Meson injects the authoritative values via
+//! `HOTARU_VERSION` / `HOTARU_PKGDATADIR` when it drives cargo (see
+//! src/meson.build); plain `cargo build` falls back to the cargo package
+//! version and the standard system data directory.
 
-use serde::{Deserialize, Serialize};
+pub const VERSION: &str = match option_env!("HOTARU_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
 
-use crate::model::WallpaperSource;
-
-// TODO: Implementation
-#[allow(dead_code)]
-type SourceConfigMap = HashMap<WallpaperSource, SourceConfig>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct SourceConfig {
-    pub is_mute: bool,
-    pub audio_volume: f32,
-    pub content_fit: ContentFit,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ContentFit {
-    Fill,
-    Contain,
-    Cover,
-}
+/// Installed data directory (gresource bundle etc.).
+#[allow(dead_code)] // not read yet; kept for gresource loading
+pub const PKGDATADIR: &str = match option_env!("HOTARU_PKGDATADIR") {
+    Some(dir) => dir,
+    None => "/usr/share/hotaru",
+};

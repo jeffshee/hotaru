@@ -16,6 +16,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 mod cli;
+mod config;
 
 use std::cell::RefCell;
 use std::rc::Rc;

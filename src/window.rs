@@ -246,7 +246,7 @@ mod imp {
                     obj.set_anchor(gtk4_layer_shell::Edge::Bottom, true);
                     obj.set_exclusive_zone(-1);
                     obj.set_keyboard_mode(gtk4_layer_shell::KeyboardMode::None);
-                    obj.set_namespace(Some("hidamari-layer-shell"));
+                    obj.set_namespace(Some("hotaru-layer-shell"));
 
                     obj.connect_realize(move |window| {
                         let connector = window.monitor_connector();

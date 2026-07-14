@@ -22,7 +22,7 @@ use clap::Parser;
 use hotaru::prelude::*;
 
 #[derive(Debug, Parser)]
-#[command(author, version, about)]
+#[command(author, version = crate::config::VERSION, about)]
 pub struct Cli {
     #[arg(
         short = 'l',

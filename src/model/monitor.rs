@@ -24,8 +24,6 @@ use thiserror::Error;
 pub enum MonitorError {
     #[error("No display")]
     NoDisplay,
-    #[error("Monitor error: {0}")]
-    MonitorError(String),
     #[error("ListModel error: {0}")]
     MonitorListModel(String),
 }
