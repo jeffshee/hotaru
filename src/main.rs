@@ -48,7 +48,7 @@ fn main() -> anyhow::Result<()> {
     // GLArea context cannot share with a GLES display context. Steer GDK
     // away from GLES before it opens the display; HOTARU_ALLOW_GLES=1 opts
     // out (scene wallpapers will then fail where GDK picks GLES).
-    #[cfg(feature = "scene")]
+    #[cfg(feature = "wpe")]
     if std::env::var_os("HOTARU_ALLOW_GLES").is_none() {
         let disable = match std::env::var("GDK_DISABLE") {
             Ok(value) if value.split(',').any(|v| v.trim() == "gles-api") => value,

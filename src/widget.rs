@@ -16,12 +16,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 mod clip_box;
-#[cfg(any(feature = "mpv", feature = "scene"))]
+#[cfg(any(feature = "mpv", feature = "wpe"))]
 mod gl_loader;
 mod gstgtk4;
 #[cfg(feature = "mpv")]
 mod mpv;
-#[cfg(feature = "scene")]
+#[cfg(feature = "wpe")]
 mod scene;
 mod web;
 
@@ -35,7 +35,7 @@ pub use clip_box::ClipBox;
 pub use gstgtk4::GstGtk4Widget;
 #[cfg(feature = "mpv")]
 pub use mpv::MpvWidget;
-#[cfg(feature = "scene")]
+#[cfg(feature = "wpe")]
 pub use scene::SceneWidget;
 pub use web::WebWidget;
 
@@ -67,7 +67,7 @@ pub enum Renderer {
     GstGtk4(GstGtk4Widget),
     #[cfg(feature = "mpv")]
     Mpv(MpvWidget),
-    #[cfg(feature = "scene")]
+    #[cfg(feature = "wpe")]
     Scene(SceneWidget),
 }
 
@@ -119,11 +119,11 @@ impl Renderer {
 
         match package.kind {
             WpeType::Scene => {
-                #[cfg(feature = "scene")]
+                #[cfg(feature = "wpe")]
                 {
                     Self::Scene(SceneWidget::with_filepath(&package.dir.to_string_lossy()))
                 }
-                #[cfg(not(feature = "scene"))]
+                #[cfg(not(feature = "wpe"))]
                 {
                     scene_unsupported()
                 }
@@ -184,12 +184,12 @@ fn blank() -> Renderer {
     Renderer::Web(WebWidget::with_uri("about:blank"))
 }
 
-/// Placeholder for scene packages in builds without the 'scene' feature.
+/// Placeholder for scene packages in builds without the 'wpe' feature.
 /// (WPE video/web packages still render — only the scene backend is gated.)
-#[cfg(not(feature = "scene"))]
+#[cfg(not(feature = "wpe"))]
 fn scene_unsupported() -> Renderer {
     tracing::error!(
-        "scene wallpaper requested but this build lacks the 'scene' feature, \
+        "scene wallpaper requested but this build lacks the 'wpe' feature, \
          showing a blank wallpaper"
     );
     blank()

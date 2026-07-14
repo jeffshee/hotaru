@@ -158,7 +158,7 @@ A WebKitGTK `WebView` loading the configured URI (local file or remote).
 Playback controls are no-ops. `mirror()` uses a `gtk::WidgetPaintable` of
 the WebView.
 
-## SceneWidget (`src/widget/scene.rs`, cargo feature `scene`)
+## SceneWidget (`src/widget/scene.rs`, cargo feature `wpe`)
 
 Renders **scene**-type Wallpaper Engine packages (the delegation target above)
 through
@@ -185,7 +185,7 @@ frame per call. The widget therefore mirrors `MpvWidget`'s structure:
   and a GL `GLArea` context cannot share with a GLES GDK display context.
   GDK prefers GLES on some EGL setups (notably NVIDIA), so `main()` appends
   `gles-api` to `GDK_DISABLE` before GTK opens the display when built with
-  the `scene` feature (`HOTARU_ALLOW_GLES=1` opts out). The GLArea is also
+  the `wpe` feature (`HOTARU_ALLOW_GLES=1` opts out). The GLArea is also
   restricted to `GLAPI::GL`.
 - **ABI guard** — the FFI structs in `scene.rs` are hand-mirrored from
   `wpe_embed.h`; `wpe_abi_version()` is checked right after dlopen and a
