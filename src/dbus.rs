@@ -123,6 +123,8 @@ impl RendererState {
             video_renderer,
             enable_graphics_offload,
             fit,
+            self.settings_watcher.volume(),
+            self.settings_watcher.is_mute(),
             &self.renderers,
             launch_mode,
         );
@@ -171,6 +173,8 @@ impl RendererState {
             video_renderer,
             enable_graphics_offload,
             fit,
+            self.settings_watcher.volume(),
+            self.settings_watcher.is_mute(),
             &self.renderers,
             launch_mode,
         );

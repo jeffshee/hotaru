@@ -168,6 +168,8 @@ fn main() -> anyhow::Result<()> {
                     video_renderer,
                     enable_graphics_offload,
                     content_fit,
+                    settings_watcher.volume(),
+                    settings_watcher.is_mute(),
                     &renderers,
                     launch_mode,
                 );
@@ -207,6 +209,8 @@ fn main() -> anyhow::Result<()> {
                 video_renderer,
                 enable_graphics_offload,
                 content_fit,
+                settings_watcher.volume(),
+                settings_watcher.is_mute(),
                 &renderers_activate,
                 launch_mode,
             )

@@ -118,9 +118,21 @@ mod imp {
     const ASSETS_ENV: &str = "HOTARU_WPE_ASSETS";
     const DEFAULT_LIBRARY: &str = "liblinux-wallpaperengine-lib.so";
 
-    /// Scene render rate cap, matching linux-wallpaperengine's standalone
-    /// default; wallpapers should not render at full monitor refresh.
-    const FPS_LIMIT: i64 = 30;
+    /// Scene render-rate cap in FPS. Kept below very high refresh rates to
+    /// bound GPU use; override with `HOTARU_WPE_FPS`.
+    const FPS_ENV: &str = "HOTARU_WPE_FPS";
+    const DEFAULT_FPS: i64 = 60;
+
+    fn fps_limit() -> i64 {
+        static FPS: OnceLock<i64> = OnceLock::new();
+        *FPS.get_or_init(|| {
+            std::env::var(FPS_ENV)
+                .ok()
+                .and_then(|v| v.parse::<i64>().ok())
+                .filter(|&v| v > 0)
+                .unwrap_or(DEFAULT_FPS)
+        })
+    }
 
     /// Embed ABI this build was compiled against (WPE_EMBED_ABI_VERSION in
     /// wpe_embed.h). The structs and signatures below are hand-mirrored from
@@ -394,19 +406,18 @@ mod imp {
             }
 
             // Scenes animate continuously: redraw on frame clock ticks while
-            // playing, capped at FPS_LIMIT (matching the engine's standalone
-            // default) so wallpapers don't render at full monitor refresh.
-            // A paused scene stays a still frame (damage events still
-            // repaint it via the render handler).
+            // playing, capped at the FPS limit so wallpapers don't render at
+            // full refresh on high-Hz displays. A paused scene stays a still
+            // frame (damage events still repaint it via the render handler).
+            let frame_interval_us = 1_000_000 / fps_limit();
             let tick_id = gl_area.add_tick_callback(glib::clone!(
                 #[weak(rename_to = imp)]
                 self,
                 #[upgrade_or]
                 glib::ControlFlow::Break,
                 move |gl_area, clock| {
-                    const FRAME_INTERVAL_US: i64 = 1_000_000 / FPS_LIMIT;
                     let now = clock.frame_time();
-                    if !imp.paused.get() && now - imp.last_render_us.get() >= FRAME_INTERVAL_US {
+                    if !imp.paused.get() && now - imp.last_render_us.get() >= frame_interval_us {
                         imp.last_render_us.set(now);
                         gl_area.queue_render();
                     }

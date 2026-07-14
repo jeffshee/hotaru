@@ -196,10 +196,12 @@ frame per call. The widget therefore mirrors `MpvWidget`'s structure:
 - **GL symbols** — resolved through the same process-wide loader as
   `MpvWidget` (`src/widget/gl_loader.rs`).
 - **Frame scheduling** — scenes animate continuously: a frame-clock tick
-  callback queues a render every frame while playing. The engine derives
-  its scene clock from the host timestamps we pass (frame-clock time), so
-  `pause()` freezes the clock (`wpe_context_set_paused`) and damage-driven
-  redraws while paused repeat the same still frame.
+  callback queues a render while playing, capped at `HOTARU_WPE_FPS` FPS
+  (default 60) so it doesn't run at full refresh on high-Hz displays. The
+  engine derives its scene clock from the host timestamps we pass
+  (frame-clock time), so `pause()` freezes the clock
+  (`wpe_context_set_paused`) and damage-driven redraws while paused repeat
+  the same still frame.
 - **Property mapping** — volume 0-100 scales to the engine's 0-128;
   `set_mute` maps to `wpe_context_set_audio_enabled`. Content fit maps to
   the engine's viewport scaling (Fill → `stretch`, Contain → `fit`,

@@ -50,12 +50,15 @@ impl HotaruApplication {
     /// The `renderers` parameter is a shared vec that is populated with the
     /// primary renderers created during this call. It is cleared first to
     /// remove any previously active renderers.
+    #[allow(clippy::too_many_arguments)]
     pub fn build_ui(
         &self,
         config: &WallpaperConfig,
         video_renderer: VideoRenderer,
         enable_graphics_offload: bool,
         content_fit: gtk::ContentFit,
+        volume: i32,
+        mute: bool,
         renderers: &Rc<RefCell<Vec<Renderer>>>,
         launch_mode: LaunchMode,
     ) {
@@ -124,6 +127,8 @@ impl HotaruApplication {
                     }
                 };
                 renderer.set_content_fit(content_fit);
+                renderer.set_volume(volume);
+                renderer.set_mute(mute);
                 if let Some(viewport) = viewport {
                     window.set_child(Some(&wrap_with_viewport(
                         renderer.widget(),
