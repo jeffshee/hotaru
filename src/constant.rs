@@ -24,3 +24,7 @@ pub const LAUNCH_MODE_X11_DESKTOP: &str = "x11-desktop";
 pub const LAUNCH_MODE_WAYLAND_LAYER_SHELL: &str = "wayland-layer-shell";
 pub const LAUNCH_MODE_GNOME_EXT_HANABI: &str = "gnome-ext-hanabi";
 pub const LAUNCH_MODE_WINDOWED: &str = "windowed";
+
+/// Steam app id for Wallpaper Engine; its workshop items live under
+/// `steamapps/workshop/content/<this>/<workshop-id>`.
+pub const WPE_WORKSHOP_APP_ID: &str = "431960";

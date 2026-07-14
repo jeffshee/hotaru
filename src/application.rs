@@ -24,7 +24,7 @@ use tracing::{debug, info, warn};
 use crate::{
     model::{
         LaunchMode, MonitorListModelExt as _, VideoRenderer, Viewport, WallpaperConfig,
-        WallpaperSource, WindowInfo, WindowLayout,
+        WallpaperSource, WallpaperType, WindowInfo, WindowLayout,
     },
     monitor_tracker::MonitorTracker,
     widget::{ClipBox, Renderer, RendererWidget},
@@ -91,19 +91,37 @@ impl HotaruApplication {
                 window.set_size_request(*window_width, *window_height);
                 debug!("window size request: {}x{}", window_width, window_height);
                 window.set_title(Some(window_title));
-                let renderer = match wallpaper_source {
-                    WallpaperSource::Filepath { filepath } => Renderer::with_filepath(
-                        filepath,
-                        wallpaper_type,
-                        video_renderer,
-                        enable_graphics_offload,
-                    ),
-                    WallpaperSource::Uri { uri } => Renderer::with_uri(
-                        uri,
-                        wallpaper_type,
-                        video_renderer,
-                        enable_graphics_offload,
-                    ),
+                let renderer = if *wallpaper_type == WallpaperType::Wpe {
+                    // WPE packages resolve their real renderer from project.json,
+                    // so they take the whole source (filepath or workshop_id).
+                    Renderer::with_wpe(wallpaper_source, video_renderer, enable_graphics_offload)
+                } else {
+                    match wallpaper_source {
+                        WallpaperSource::Filepath { filepath } => Renderer::with_filepath(
+                            filepath,
+                            wallpaper_type,
+                            video_renderer,
+                            enable_graphics_offload,
+                        ),
+                        WallpaperSource::Uri { uri } => Renderer::with_uri(
+                            uri,
+                            wallpaper_type,
+                            video_renderer,
+                            enable_graphics_offload,
+                        ),
+                        WallpaperSource::WorkshopId { workshop_id } => {
+                            warn!(
+                                "workshop_id ({}) requires wallpaper_type: wpe; showing blank",
+                                workshop_id
+                            );
+                            Renderer::with_uri(
+                                "about:blank",
+                                &WallpaperType::Web,
+                                video_renderer,
+                                enable_graphics_offload,
+                            )
+                        }
+                    }
                 };
                 renderer.set_content_fit(content_fit);
                 if let Some(viewport) = viewport {

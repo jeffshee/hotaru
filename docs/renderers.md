@@ -10,7 +10,7 @@ wallpaper immediately.
 | libmpv (`MpvWidget`) | `mpv` | **Default.** Best performance; robust hardware decoding. |
 | GStreamer (`GstGtk4Widget`) | `gst-gtk4` | Fallback; GTK-native pipeline, used when built without libmpv. |
 | WebKitGTK (`WebWidget`) | — | Not user-selectable; used for `wallpaper_type: web`. |
-| linux-wallpaperengine (`SceneWidget`) | — | Not user-selectable; used for `wallpaper_type: scene`. |
+| linux-wallpaperengine (`SceneWidget`) | — | Not user-selectable; renders **scene**-type `wpe` packages. |
 
 mpv is the default because its `hwdec=auto-safe` reliably engages hardware
 decoding across codecs, keeping CPU usage flat where the GStreamer path can
@@ -35,19 +35,44 @@ They are held in the `Renderer` enum, dispatched statically via
 `enum_dispatch`. `Renderer::with_filepath` / `with_uri` pick the concrete
 widget from `WallpaperType` + `VideoRenderer`; a build without the `mpv`
 cargo feature transparently downgrades an `mpv` selection to `gst-gtk4` with
-a warning.
+a warning. A `wpe` wallpaper is resolved first (see below) and then routed
+through the same dispatch as its underlying type.
 
 ```mermaid
 flowchart TD
-    SRC["Renderer::with_filepath / with_uri"] --> T{wallpaper_type}
+    SRC["Renderer::with_filepath / with_uri / with_wpe"] --> T{wallpaper_type}
     T -->|web| WEB[WebWidget]
-    T -->|scene| SCN[SceneWidget]
+    T -->|wpe| WP{"project.json<br/>type"}
+    WP -->|scene| SCN[SceneWidget]
+    WP -->|web| WEB
+    WP -->|video| VR
     T -->|video| VR{video-renderer setting}
     VR -->|mpv| F{"built with<br/>mpv feature?"}
     VR -->|gst-gtk4| GST[GstGtk4Widget]
     F -->|yes| MPV[MpvWidget]
     F -->|"no (warn)"| GST
 ```
+
+## Wallpaper Engine packages (`wallpaper_type: wpe`)
+
+A Wallpaper Engine workshop item is a directory with a `project.json` whose
+`type` is `scene`, `video`, or `web`. `Renderer::with_wpe` ([wpe.rs](../src/wpe.rs))
+resolves the package and delegates by that type:
+
+| `project.json` type | Renderer | Entry passed |
+|---|---|---|
+| `scene` | `SceneWidget` (linux-wallpaperengine) | the package **directory** |
+| `video` | the video renderer (mpv/gst) | `project.json` `file` (the video) |
+| `web` | `WebWidget` | `project.json` `file` (`index.html`) |
+
+So video/web packages use hotaru's own (better-tuned) renderers rather than
+the engine's built-ins — and they work even in a build without the `scene`
+cargo feature; only scene packages need the engine.
+
+The source is either a `filepath` (the package directory) or a `workshop_id`
+(resolved to the Steam install: `$HOTARU_WPE_WORKSHOP`, then
+`~/.local/share/Steam`, `~/.steam/steam`, `~/.steam/root`, and Flatpak Steam,
+under `steamapps/workshop/content/431960/<id>`).
 
 `mirror()` supports clone/stretch modes: it returns a widget showing the same
 output as the primary renderer without a second decode pipeline (see
@@ -135,7 +160,8 @@ the WebView.
 
 ## SceneWidget (`src/widget/scene.rs`, cargo feature `scene`)
 
-Renders Wallpaper Engine **scene** wallpapers through
+Renders **scene**-type Wallpaper Engine packages (the delegation target above)
+through
 [linux-wallpaperengine](https://github.com/Almamu/linux-wallpaperengine)'s
 embedding API (`wpe_embed.h`, on the `feat/embed-api` branch of our fork),
 which follows the libmpv render-API model: the host owns the GL context,

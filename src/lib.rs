@@ -23,6 +23,7 @@ pub mod monitor_tracker;
 pub mod settings_watcher;
 pub mod widget;
 pub mod window;
+pub mod wpe;
 
 pub mod prelude {
     pub use crate::application::HotaruApplication;

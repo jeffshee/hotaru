@@ -28,7 +28,8 @@ mod web;
 use enum_dispatch::enum_dispatch;
 use gtk::Widget;
 
-use crate::model::{VideoRenderer, WallpaperType};
+use crate::model::{VideoRenderer, WallpaperSource, WallpaperType};
+use crate::wpe::{WpePackage, WpeType};
 
 pub use clip_box::ClipBox;
 pub use gstgtk4::GstGtk4Widget;
@@ -89,10 +90,64 @@ impl Renderer {
                 VideoRenderer::Mpv => unreachable!(),
             },
             WallpaperType::Web => Self::Web(WebWidget::with_filepath(filepath)),
-            #[cfg(feature = "scene")]
-            WallpaperType::Scene => Self::Scene(SceneWidget::with_filepath(filepath)),
-            #[cfg(not(feature = "scene"))]
-            WallpaperType::Scene => scene_unsupported(),
+            WallpaperType::Wpe => Self::with_wpe(
+                &WallpaperSource::Filepath {
+                    filepath: filepath.to_string(),
+                },
+                video_renderer,
+                enable_graphics_offload,
+            ),
+        }
+    }
+
+    /// Build a renderer for a Wallpaper Engine package: resolve the source,
+    /// read its `project.json`, and delegate to the renderer its `type`
+    /// selects — scene packages to `SceneWidget` (linux-wallpaperengine),
+    /// video/web packages to hotaru's own video/web renderers.
+    pub fn with_wpe(
+        source: &WallpaperSource,
+        video_renderer: VideoRenderer,
+        enable_graphics_offload: bool,
+    ) -> Self {
+        let package = match WpePackage::resolve(source) {
+            Ok(package) => package,
+            Err(e) => {
+                tracing::error!("Failed to load Wallpaper Engine package: {:#}", e);
+                return blank();
+            }
+        };
+
+        match package.kind {
+            WpeType::Scene => {
+                #[cfg(feature = "scene")]
+                {
+                    Self::Scene(SceneWidget::with_filepath(&package.dir.to_string_lossy()))
+                }
+                #[cfg(not(feature = "scene"))]
+                {
+                    scene_unsupported()
+                }
+            }
+            WpeType::Video | WpeType::Web => {
+                let entry = match package.entry() {
+                    Ok(entry) => entry,
+                    Err(e) => {
+                        tracing::error!("Invalid Wallpaper Engine package: {:#}", e);
+                        return blank();
+                    }
+                };
+                let kind = if package.kind == WpeType::Video {
+                    WallpaperType::Video
+                } else {
+                    WallpaperType::Web
+                };
+                Self::with_filepath(
+                    &entry.to_string_lossy(),
+                    &kind,
+                    video_renderer,
+                    enable_graphics_offload,
+                )
+            }
         }
     }
 
@@ -113,22 +168,31 @@ impl Renderer {
                 VideoRenderer::Mpv => unreachable!(),
             },
             WallpaperType::Web => Self::Web(WebWidget::with_uri(uri)),
-            #[cfg(feature = "scene")]
-            WallpaperType::Scene => Self::Scene(SceneWidget::with_uri(uri)),
-            #[cfg(not(feature = "scene"))]
-            WallpaperType::Scene => scene_unsupported(),
+            WallpaperType::Wpe => {
+                tracing::error!(
+                    "wpe wallpaper cannot be a URI ({}); use filepath or workshop_id",
+                    uri
+                );
+                blank()
+            }
         }
     }
 }
 
-/// Placeholder for scene wallpapers in builds without the 'scene' feature.
+/// A blank fallback renderer, used when a wallpaper cannot be constructed.
+fn blank() -> Renderer {
+    Renderer::Web(WebWidget::with_uri("about:blank"))
+}
+
+/// Placeholder for scene packages in builds without the 'scene' feature.
+/// (WPE video/web packages still render — only the scene backend is gated.)
 #[cfg(not(feature = "scene"))]
 fn scene_unsupported() -> Renderer {
     tracing::error!(
         "scene wallpaper requested but this build lacks the 'scene' feature, \
          showing a blank wallpaper"
     );
-    Renderer::Web(WebWidget::with_uri("about:blank"))
+    blank()
 }
 
 /// Downgrade renderer choices this build cannot honor.

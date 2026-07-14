@@ -1,7 +1,7 @@
 # Hotaru Architecture
 
-Hotaru is a live wallpaper **renderer backend**: it draws video, web, or
-Wallpaper Engine scene content
+Hotaru is a live wallpaper **renderer backend**: it draws video, web, and
+Wallpaper Engine packages (scene/video/web)
 as desktop wallpaper on X11 (EWMH desktop windows) and Wayland (layer shell),
 and acts as the rendering engine for the
 [GNOME Hanabi Extension](https://github.com/jeffshee/gnome-ext-hanabi).
@@ -88,6 +88,7 @@ A wallpaper is described by a JSON `WallpaperConfig`:
     "monitors": [
         { "monitor": "DP-5", "wallpaper_type": "video", "filepath": "/path/video.mp4" },
         { "monitor": "DP-4", "wallpaper_type": "web",   "uri": "https://example.org/" },
+        { "monitor": "DP-3", "wallpaper_type": "wpe",   "workshop_id": "1771553708" },
         { "monitor": "HDMI-1" }
     ]
 }
@@ -95,8 +96,11 @@ A wallpaper is described by a JSON `WallpaperConfig`:
 
 - `monitor` is the connector name (`DP-5`, `HDMI-1`, …). In stretch mode the
   name is not matched against real monitors (examples use `"STRETCH"`).
-- `wallpaper_type` is `video` or `web`.
-- The source is either `filepath` or `uri` (serde-flattened union).
+- `wallpaper_type` is `video`, `web`, or `wpe` (a Wallpaper Engine package,
+  which dispatches to a renderer by its `project.json` type — see
+  [renderers.md](renderers.md)).
+- The source is `filepath`, `uri`, or `workshop_id` (serde-flattened union;
+  `workshop_id` is only valid with `wpe`).
 - An entry with only `monitor` is a **clone** target (used by
   `clone_single_wallpaper`).
 

@@ -3,8 +3,8 @@
     "monitors": [
         {
             "monitor": "STRETCH",
-            "wallpaper_type": "scene",
-            "filepath": "/path/to/steamapps/workshop/content/431960/<workshop-id>"
+            "wallpaper_type": "wpe",
+            "workshop_id": "1771553708"
         }
     ]
 }
