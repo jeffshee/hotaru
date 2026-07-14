@@ -52,27 +52,31 @@ flowchart LR
 
 ```
 src/
-├── main.rs             CLI parsing, mode dispatch, rebuild triggers
+├── main.rs             CLI parsing, mode dispatch
 ├── application.rs      HotaruApplication, build_ui(), XWayland fallback
 ├── window.rs           HotaruApplicationWindow, per-launch-mode window setup
-├── dbus.rs             D-Bus service, RendererState, command channel
+├── state.rs            RendererState: active wallpaper, rebuild path/triggers
+├── dbus.rs             D-Bus service + command channel
 ├── settings_watcher.rs GSettings access + runtime change propagation
-├── monitor_tracker.rs  GObject emitting "monitor-changed" on hotplug
+├── monitor_watcher.rs  GObject emitting "monitor-changed" on hotplug
+├── clip_box.rs         ClipBox viewport-clipping container
 ├── cli.rs              clap definitions (binary only)
-├── constant.rs         application IDs, launch mode strings
+├── config.rs           build-time config (version/pkgdatadir, meson-injected)
+├── constants.rs        application IDs, Wallpaper Engine app id
+├── wpe.rs              Wallpaper Engine package resolution (project.json)
 ├── model/
 │   ├── wallpaper_config.rs   WallpaperConfig JSON schema (serde)
 │   ├── window_layout.rs      config + monitors → WindowLayout/Viewport
 │   ├── video_renderer.rs     VideoRenderer enum (mpv | gst-gtk4)
-│   ├── launch_mode.rs        LaunchMode enum
+│   ├── launch_mode.rs        LaunchMode enum (glib::Boxed)
 │   ├── monitor.rs            MonitorInfo/MonitorMap helpers
-│   ├── hanabi_window_params.rs  window-title protocol for Hanabi
-│   └── source_config.rs      per-source config (TODO, not implemented)
-└── widget/
+│   └── hanabi_params.rs      window-title protocol for Hanabi
+└── renderer/
     ├── mpv.rs          MpvWidget (libmpv render API into GLArea)
     ├── gstgtk4.rs      GstGtk4Widget (gst-play + gtk4paintablesink)
     ├── web.rs          WebWidget (WebKitGTK)
-    └── clip_box.rs     ClipBox viewport-clipping container
+    ├── scene.rs        SceneWidget (linux-wallpaperengine embed API)
+    └── gl_loader.rs    process-wide GL symbol resolver (mpv + scene)
 ```
 
 The crate builds as a library (`hotaru::*`) plus a thin binary (`main.rs`,
@@ -129,7 +133,7 @@ monitor shows only its region of one large wallpaper.
 |---|---|
 | `x11-desktop` (default) | Sets `_NET_WM_WINDOW_TYPE_DESKTOP` (EWMH) via x11rb, positions the window with `ConfigureWindow`, and clears `_GTK_FRAME_EXTENTS` so Mutter draws no shadow. If the session is Wayland, the process **re-execs itself with `GDK_BACKEND=x11`** to run on XWayland (`fallback_to_xwayland`). |
 | `wayland-layer-shell` | gtk4-layer-shell: `Layer::Background`, anchored to all four edges, exclusive zone −1, keyboard mode `None`, pinned to the target monitor by connector name. |
-| `gnome-ext-hanabi` | Encodes `HanabiWindowParams` (position, keep-at-bottom/minimized/position flags) as JSON into the **window title** (`@io.github.jeffshee.HanabiRenderer!{...}`). The Hanabi shell extension reads the title and manages the window on the GNOME Shell side. |
+| `gnome-ext-hanabi` | Encodes `HanabiParams` as compact JSON into the **window title**: `@io.github.jeffshee.Hotaru!{"p":[x,y],"b":true,"m":true,"k":true}` (`p` position, `b` keep-at-bottom, `m` keep-minimized, `k` keep-position). The Hanabi shell extension reads the title and manages the window on the GNOME Shell side. |
 | `windowed` | Plain decorated window. Development/testing. |
 
 Every window installs a frame-clock tick callback that logs frames-per-second
@@ -155,15 +159,15 @@ the single path that materializes a wallpaper, used by both modes:
 The wallpaper is torn down (all windows closed) and rebuilt through the same
 path when:
 
-- **Monitors change** — `MonitorTracker` emits `monitor-changed` on hotplug
+- **Monitors change** — `MonitorWatcher` emits `monitor-changed` on hotplug
   (connected to `GdkMonitors` `items-changed`).
 - **The `video-renderer` setting changes** — switching renderer takes effect
   immediately, no restart required.
 - **D-Bus `ApplyWallpaper`** arrives (daemon mode).
 
-In daemon mode all three funnel through `RendererState::rebuild_ui()`; in
-standalone mode an equivalent rebuild closure in `main.rs` re-reads settings
-and calls `build_ui`.
+Both modes share one `RendererState` ([state.rs](../src/state.rs)): all
+triggers funnel through `RendererState::rebuild_ui()` (wired by
+`watch_changes()`), which re-reads settings and calls `build_ui`.
 
 ## Settings (GSettings)
 
@@ -201,12 +205,12 @@ interface `io.github.jeffshee.Hotaru.Renderer`:
 ### Threading
 
 zbus runs on its own thread (async-io executor); GTK/GStreamer state lives on
-the GLib main thread. The bridge is a `mpsc::sync_channel<Command>`: each
-D-Bus method sends a `Command` with a reply channel and blocks on the answer,
-while a 50 ms GLib timeout on the main thread drains the queue into
-`RendererState::handle_command`. `RendererState` (app handle, renderer list,
-active config, playback state, settings watcher) is `Rc` on the main thread
-and never crosses threads.
+the GLib main thread. The bridge is an `async_channel<Command>`: each D-Bus
+method sends a `Command` with a reply channel and awaits the answer, while a
+`glib::spawn_future_local` task on the main thread handles commands as they
+arrive (event-driven, no polling). `RendererState` (app handle, renderer
+list, active config, playback state, settings watcher) is `Rc` on the main
+thread and never crosses threads.
 
 ```mermaid
 sequenceDiagram
@@ -215,9 +219,9 @@ sequenceDiagram
     participant M as GLib main thread
 
     C->>Z: ApplyWallpaper(config_json, launch_mode)
-    Z->>M: Command (mpsc::sync_channel)
-    Note over M: 50 ms timeout drains the queue
-    M->>M: RendererState::handle_command()
+    Z->>M: Command (async_channel)
+    Note over M: spawn_future_local handles commands on arrival
+    M->>M: handle_command(&state, cmd)
     M-->>Z: result (reply channel)
     Z-->>C: D-Bus reply
     Z-->>C: PropertiesChanged (State)
@@ -228,9 +232,9 @@ sequenceDiagram
 Two entry points that drive the same cargo build:
 
 - **Cargo**: `cargo build` / `cargo run`. Features: `base` (GStreamer plugin
-  variants), `mpv` (libmpv renderer). Default = `base + mpv`; the `mpv`
-  feature exists so environments without libmpv can build with
-  `--no-default-features --features base`.
+  variants), `mpv` (libmpv renderer), `wpe` (Wallpaper Engine scene renderer,
+  dlopen'd at runtime). Default = `base + mpv + wpe`; environments without
+  libmpv can build with `--no-default-features --features base`.
 - **Meson** (`make setup[-local]` / `make build` / `make install`): wraps
   cargo, installs the binary, compiled GSettings schema, and desktop/
   metainfo/D-Bus service files. Option `-Dmpv=false` maps to the cargo

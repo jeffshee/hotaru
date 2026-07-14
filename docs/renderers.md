@@ -19,7 +19,7 @@ fall back to software decoding.
 ## Common interface
 
 All renderers are GTK widgets (GObject subclasses of `gtk::Box`) implementing
-the `RendererWidget` trait ([widget.rs](../src/widget.rs)):
+the `RendererWidget` trait ([renderer.rs](../src/renderer.rs)):
 
 ```rust
 trait RendererWidget: AsRef<Widget> {
@@ -66,7 +66,7 @@ resolves the package and delegates by that type:
 | `web` | `WebWidget` | `project.json` `file` (`index.html`) |
 
 So video/web packages use hotaru's own (better-tuned) renderers rather than
-the engine's built-ins — and they work even in a build without the `scene`
+the engine's built-ins — and they work even in a build without the `wpe`
 cargo feature; only scene packages need the engine.
 
 The source is either a `filepath` (the package directory) or a `workshop_id`
@@ -78,7 +78,7 @@ under `steamapps/workshop/content/431960/<id>`).
 output as the primary renderer without a second decode pipeline (see
 per-renderer notes below).
 
-## MpvWidget (`src/widget/mpv.rs`, cargo feature `mpv`)
+## MpvWidget (`src/renderer/mpv.rs`, cargo feature `mpv`)
 
 libmpv has no GTK video sink, so the widget drives mpv's **OpenGL render
 API** (`vo=libmpv`) into a `gtk::GLArea`:
@@ -132,7 +132,7 @@ sequenceDiagram
   `gdk::Paintable`, so clones use a `gtk::WidgetPaintable` snapshot of the
   GLArea.
 
-## GstGtk4Widget (`src/widget/gstgtk4.rs`)
+## GstGtk4Widget (`src/renderer/gstgtk4.rs`)
 
 The GTK-native pipeline: `gst-play` (`gstreamer-play`) with a
 `gtk4paintablesink`, whose `gdk::Paintable` is shown by a `gtk::Picture`
@@ -152,7 +152,7 @@ too, GStreamer's registry picks the newer of the two.
 - Decoding uses whatever GStreamer elements the system provides; hardware
   decode availability depends on installed plugin sets (VA-API/NVDEC etc.).
 
-## WebWidget (`src/widget/web.rs`)
+## WebWidget (`src/renderer/web.rs`)
 
 A WebKitGTK `WebView` loading the configured URI (local file or remote).
 Playback controls are no-ops. `mirror()` uses a `gtk::WidgetPaintable` of
@@ -170,8 +170,10 @@ linux-wallpaperengine does not implement at all:
   fed a zeroed 128-sample spectrum so audio-reactive wallpapers run flat).
 - **Property delivery** — after load, hotaru calls
   `window.wallpaperPropertyListener.applyUserProperties(defaults)` with the
-  package's `general.properties` defaults (from `wpe.rs`). This is what drives
-  property-gated rendering, e.g. which model/quality a wallpaper loads.
+  package's `general.properties` defaults (from `wpe.rs`), plus
+  `applyGeneralProperties({fps})` with the `HOTARU_WPE_FPS` limit. This is
+  what drives property-gated rendering, e.g. which model/quality a wallpaper
+  loads.
 - **Hardware-accelerated compositing** forced on (WebGL wallpapers glitch on
   first paint under the default software→GPU promotion).
 - **Media playback** — autoplay is allowed and `media-playback-requires-user-gesture`
@@ -191,7 +193,7 @@ linux-wallpaperengine does not implement at all:
 This is emulation: audio-reactive and media-integration wallpapers run but
 don't react (no real spectrum / now-playing feed).
 
-## SceneWidget (`src/widget/scene.rs`, cargo feature `wpe`)
+## SceneWidget (`src/renderer/scene.rs`, cargo feature `wpe`)
 
 Renders **scene**-type Wallpaper Engine packages (the delegation target above)
 through
@@ -227,7 +229,7 @@ frame per call. The widget therefore mirrors `MpvWidget`'s structure:
   and the `WPE_ABI_VERSION` constant in `scene.rs` in lockstep on any ABI
   change.
 - **GL symbols** — resolved through the same process-wide loader as
-  `MpvWidget` (`src/widget/gl_loader.rs`).
+  `MpvWidget` (`src/renderer/gl_loader.rs`).
 - **Frame scheduling** — scenes animate continuously: a frame-clock tick
   callback queues a render while playing, capped at `HOTARU_WPE_FPS` FPS
   (default 60) so it doesn't run at full refresh on high-Hz displays. The

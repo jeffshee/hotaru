@@ -26,10 +26,10 @@ use gtk::{
 use crate::model::MonitorError;
 
 glib::wrapper! {
-    pub struct MonitorTracker(ObjectSubclass<imp::MonitorTracker>);
+    pub struct MonitorWatcher(ObjectSubclass<imp::MonitorWatcher>);
 }
 
-impl MonitorTracker {
+impl MonitorWatcher {
     pub fn new() -> Self {
         Object::new()
     }
@@ -41,7 +41,7 @@ impl MonitorTracker {
     }
 }
 
-impl Default for MonitorTracker {
+impl Default for MonitorWatcher {
     fn default() -> Self {
         Self::new()
     }
@@ -59,21 +59,21 @@ mod imp {
     use crate::model::MonitorListModelExt as _;
 
     #[derive(Default)]
-    pub struct MonitorTracker;
+    pub struct MonitorWatcher;
 
     #[glib::object_subclass]
-    impl ObjectSubclass for MonitorTracker {
-        const NAME: &'static str = "MonitorTracker";
-        type Type = super::MonitorTracker;
+    impl ObjectSubclass for MonitorWatcher {
+        const NAME: &'static str = "MonitorWatcher";
+        type Type = super::MonitorWatcher;
         type ParentType = Object;
     }
 
-    impl ObjectImpl for MonitorTracker {
+    impl ObjectImpl for MonitorWatcher {
         fn constructed(&self) {
             self.parent_constructed();
             let obj = self.obj();
 
-            let monitors = super::MonitorTracker::monitors().unwrap();
+            let monitors = super::MonitorWatcher::monitors().unwrap();
             monitors.connect_items_changed(glib::clone!(
                 #[weak]
                 obj,
@@ -82,7 +82,7 @@ mod imp {
                         #[weak]
                         list,
                         move || {
-                            let monitors: Vec<Monitor> = list.try_to_monitor_vec().unwrap();
+                            let monitors: Vec<Monitor> = list.monitor_vec().unwrap();
                             debug!("monitor changed: {:?}", monitors);
                             obj.emit_by_name("monitor-changed", &[&list])
                         }

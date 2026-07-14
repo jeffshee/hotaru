@@ -17,21 +17,32 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::constant::HANABI_APPLICATION_ID;
+use crate::constants::APPLICATION_ID;
 
+/// Window-management parameters carried to the GNOME Hanabi extension.
+///
+/// Serialized with single-letter keys to keep the window title short:
+/// `p` = position, `b` = keep at bottom, `m` = keep minimized,
+/// `k` = keep position. The extension's parser must use the same key map.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HanabiWindowParams {
+pub struct HanabiParams {
+    #[serde(rename = "p")]
     pub position: [i32; 2],
+    #[serde(rename = "b")]
     pub keep_at_bottom: bool,
+    #[serde(rename = "m")]
     pub keep_minimized: bool,
+    #[serde(rename = "k")]
     pub keep_position: bool,
 }
 
-impl HanabiWindowParams {
-    pub fn hanabi_window_title(&self) -> String {
-        let params = serde_json::to_string(&self).expect("Failed to serialize HanabiWindowParams");
-        format!("@{HANABI_APPLICATION_ID}!{params}")
+impl HanabiParams {
+    /// The window-title wire format the GNOME Hanabi extension matches:
+    /// `@<application id>!<params json>`. The extension's title matcher
+    /// must use the same application id and key map as this build.
+    pub fn window_title(&self) -> String {
+        let params = serde_json::to_string(&self).expect("Failed to serialize HanabiParams");
+        format!("@{APPLICATION_ID}!{params}")
     }
 }
 
@@ -42,8 +53,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn test_hanabi_window_params_default() {
-        let default_params = HanabiWindowParams::default();
+    fn test_hanabi_params_default() {
+        let default_params = HanabiParams::default();
         assert_eq!(default_params.position, [0, 0]);
         assert!(!default_params.keep_at_bottom);
         assert!(!default_params.keep_minimized);
@@ -51,8 +62,8 @@ mod tests {
     }
 
     #[test]
-    fn test_hanabi_window_params() {
-        let params = HanabiWindowParams {
+    fn test_hanabi_params() {
+        let params = HanabiParams {
             position: [100, 200],
             keep_at_bottom: true,
             keep_minimized: false,
@@ -60,29 +71,27 @@ mod tests {
         };
 
         let expected_json_value = json!({
-            "position": [100, 200],
-            "keepAtBottom": true,
-            "keepMinimized": false,
-            "keepPosition": true
+            "p": [100, 200],
+            "b": true,
+            "m": false,
+            "k": true
         });
 
-        let serialized =
-            serde_json::to_value(&params).expect("Failed to serialize HanabiWindowParams");
+        let serialized = serde_json::to_value(&params).expect("Failed to serialize HanabiParams");
         assert_eq!(serialized, expected_json_value);
     }
 
     #[test]
     fn test_hanabi_window_title() {
-        let params = HanabiWindowParams {
+        let params = HanabiParams {
             position: [100, 200],
             keep_at_bottom: true,
             keep_minimized: false,
             keep_position: true,
         };
-        let title = params.hanabi_window_title();
-        let expected_title = format!(
-            "@{HANABI_APPLICATION_ID}!{{\"position\":[100,200],\"keepAtBottom\":true,\"keepMinimized\":false,\"keepPosition\":true}}"
-        );
+        let title = params.window_title();
+        let expected_title =
+            format!("@{APPLICATION_ID}!{{\"p\":[100,200],\"b\":true,\"m\":false,\"k\":true}}");
         assert_eq!(title, expected_title);
     }
 }

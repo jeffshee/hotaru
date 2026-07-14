@@ -15,7 +15,6 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-mod clip_box;
 #[cfg(any(feature = "mpv", feature = "wpe"))]
 mod gl_loader;
 mod gstgtk4;
@@ -26,12 +25,11 @@ mod scene;
 mod web;
 
 use enum_dispatch::enum_dispatch;
-use gtk::Widget;
+use gtk::{gdk, prelude::*, Widget};
 
 use crate::model::{VideoRenderer, WallpaperSource, WallpaperType};
 use crate::wpe::{WpePackage, WpeType};
 
-pub use clip_box::ClipBox;
 pub use gstgtk4::GstGtk4Widget;
 #[cfg(feature = "mpv")]
 pub use mpv::MpvWidget;
@@ -39,9 +37,40 @@ pub use mpv::MpvWidget;
 pub use scene::SceneWidget;
 pub use web::WebWidget;
 
-pub trait RendererWidgetBuilder {
-    fn with_filepath(filepath: &str) -> Self;
-    fn with_uri(uri: &str) -> Self;
+/// Wrap `paintable` in an expanding Picture (optionally graphics-offloaded)
+/// inside a Box, the shape every `mirror()` implementation produces.
+fn picture_box(
+    paintable: &impl IsA<gdk::Paintable>,
+    enable_graphics_offload: bool,
+    content_fit: gtk::ContentFit,
+) -> (gtk::Box, gtk::Picture) {
+    let widget = gtk::Box::builder().build();
+    let picture = gtk::Picture::builder()
+        .paintable(paintable)
+        .hexpand(true)
+        .vexpand(true)
+        .content_fit(content_fit)
+        .build();
+    if enable_graphics_offload {
+        let offload = gtk::GraphicsOffload::new(Some(&picture));
+        offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
+        widget.append(&offload);
+    } else {
+        widget.append(&picture);
+    }
+    (widget, picture)
+}
+
+/// Mirror a renderer that draws straight into its widget and exposes no
+/// `gdk::Paintable` (GLArea- and WebView-based renderers) by snapshotting
+/// the widget.
+fn mirror_by_snapshot(
+    source: &impl IsA<Widget>,
+    enable_graphics_offload: bool,
+    content_fit: gtk::ContentFit,
+) -> gtk::Box {
+    let paintable = gtk::WidgetPaintable::new(Some(source));
+    picture_box(&paintable, enable_graphics_offload, content_fit).0
 }
 
 #[enum_dispatch]

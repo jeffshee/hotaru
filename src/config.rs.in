@@ -1,2 +1,0 @@
-pub static VERSION: &str = @VERSION@;
-pub static PKGDATADIR: &str = @PKGDATADIR@;

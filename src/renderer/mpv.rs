@@ -18,7 +18,7 @@
 use glib::Object;
 use gtk::{gio, glib, prelude::*, subclass::prelude::*};
 
-use super::{RendererWidget, RendererWidgetBuilder};
+use super::{mirror_by_snapshot, RendererWidget};
 
 glib::wrapper! {
     pub struct MpvWidget(ObjectSubclass<imp::MpvWidget>)
@@ -26,37 +26,21 @@ glib::wrapper! {
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
-impl RendererWidgetBuilder for MpvWidget {
-    fn with_filepath(filepath: &str) -> Self {
+impl MpvWidget {
+    pub fn with_filepath(filepath: &str) -> Self {
         let uri = gio::File::for_path(filepath).uri();
         Self::with_uri(&uri)
     }
 
-    fn with_uri(uri: &str) -> Self {
+    pub fn with_uri(uri: &str) -> Self {
         Object::builder().property("uri", uri).build()
     }
 }
 
 impl RendererWidget for MpvWidget {
     fn mirror(&self, enable_graphics_offload: bool, content_fit: gtk::ContentFit) -> gtk::Box {
-        // mpv renders straight into its GLArea and exposes no gdk::Paintable,
-        // so mirror by snapshotting the widget, same as WebWidget.
-        let widget = gtk::Box::builder().build();
-        let paintable = gtk::WidgetPaintable::new(Some(&self.gl_area()));
-        let picture = gtk::Picture::builder()
-            .paintable(&paintable)
-            .hexpand(true)
-            .vexpand(true)
-            .content_fit(content_fit)
-            .build();
-        if enable_graphics_offload {
-            let offload = gtk::GraphicsOffload::new(Some(&picture));
-            offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
-            widget.append(&offload);
-        } else {
-            widget.append(&picture);
-        }
-        widget
+        // mpv renders straight into its GLArea and exposes no gdk::Paintable.
+        mirror_by_snapshot(&self.gl_area(), enable_graphics_offload, content_fit)
     }
 
     fn play(&self) {
@@ -115,7 +99,7 @@ mod imp {
     };
     use tracing::{debug, error, info, warn};
 
-    use crate::widget::gl_loader::{
+    use crate::renderer::gl_loader::{
         current_framebuffer_binding, get_proc_address_str, init_gl_resolver,
     };
 

@@ -30,13 +30,32 @@ use std::{env, fs};
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
-use crate::constant::WPE_WORKSHOP_APP_ID;
+use crate::constants::WPE_WORKSHOP_APP_ID;
 use crate::model::WallpaperSource;
 
 /// Environment override pointing directly at the workshop content directory
 /// (the one containing `<workshop-id>` subdirectories), e.g.
 /// `.../steamapps/workshop/content/431960`.
 const WORKSHOP_ENV: &str = "HOTARU_WPE_WORKSHOP";
+
+/// Render-rate cap for Wallpaper Engine wallpapers, in FPS. Applies to the
+/// scene renderer's frame scheduling and is announced to web packages via
+/// `applyGeneralProperties`. Kept below very high refresh rates to bound
+/// GPU use; override with `HOTARU_WPE_FPS`.
+const FPS_ENV: &str = "HOTARU_WPE_FPS";
+const DEFAULT_FPS: i64 = 60;
+
+pub fn fps_limit() -> i64 {
+    use std::sync::OnceLock;
+    static FPS: OnceLock<i64> = OnceLock::new();
+    *FPS.get_or_init(|| {
+        env::var(FPS_ENV)
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(DEFAULT_FPS)
+    })
+}
 
 /// The renderer a WPE package maps to, from its `project.json` `type`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

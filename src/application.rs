@@ -22,12 +22,14 @@ use gtk::{gdk::Display, gio, glib, glib::Type, prelude::*};
 use tracing::{debug, info, warn};
 
 use crate::{
+    clip_box::ClipBox,
     model::{
-        LaunchMode, MonitorListModelExt as _, VideoRenderer, Viewport, WallpaperConfig,
-        WallpaperSource, WallpaperType, WindowInfo, WindowLayout,
+        LaunchMode, MonitorListModelExt as _, Viewport, WallpaperConfig, WallpaperSource,
+        WallpaperType, WindowLayout, WindowRole,
     },
-    monitor_tracker::MonitorTracker,
-    widget::{ClipBox, Renderer, RendererWidget},
+    monitor_watcher::MonitorWatcher,
+    renderer::{Renderer, RendererWidget},
+    settings_watcher::RenderSettings,
     window::{HotaruApplicationWindow, Position},
 };
 
@@ -50,143 +52,124 @@ impl HotaruApplication {
     /// The `renderers` parameter is a shared vec that is populated with the
     /// primary renderers created during this call. It is cleared first to
     /// remove any previously active renderers.
-    #[allow(clippy::too_many_arguments)]
     pub fn build_ui(
         &self,
         config: &WallpaperConfig,
-        video_renderer: VideoRenderer,
-        enable_graphics_offload: bool,
-        content_fit: gtk::ContentFit,
-        volume: i32,
-        mute: bool,
+        settings: &RenderSettings,
         renderers: &Rc<RefCell<Vec<Renderer>>>,
         launch_mode: LaunchMode,
     ) {
-        let monitor_map = MonitorTracker::monitors()
-            .unwrap()
-            .try_to_monitor_map()
-            .unwrap();
+        let monitor_map = MonitorWatcher::monitors().unwrap().monitor_map().unwrap();
         info!("Monitor map: {:#?}", monitor_map);
 
         let layout = WindowLayout::new(config, &monitor_map);
         info!("Window layout: {:#?}", layout);
         let mut primary_widgets = HashMap::new();
 
-        layout.windows.iter().for_each(|window_info| {
-            if let WindowInfo::Primary {
-                monitor,
-                window_x,
-                window_y,
-                window_width,
-                window_height,
-                window_title,
-                wallpaper_type,
-                wallpaper_source,
-                viewport,
-            } = window_info
-            {
-                let window = HotaruApplicationWindow::new(self, launch_mode);
-                window.set_monitor_connector(monitor.as_str());
-                window.set_position(Position {
-                    x: *window_x,
-                    y: *window_y,
-                });
-                window.set_size_request(*window_width, *window_height);
-                debug!("window size request: {}x{}", window_width, window_height);
-                window.set_title(Some(window_title));
-                let renderer = if *wallpaper_type == WallpaperType::Wpe {
-                    // WPE packages resolve their real renderer from project.json,
-                    // so they take the whole source (filepath or workshop_id).
-                    Renderer::with_wpe(wallpaper_source, video_renderer, enable_graphics_offload)
-                } else {
-                    match wallpaper_source {
-                        WallpaperSource::Filepath { filepath } => Renderer::with_filepath(
-                            filepath,
-                            wallpaper_type,
-                            video_renderer,
-                            enable_graphics_offload,
-                        ),
-                        WallpaperSource::Uri { uri } => Renderer::with_uri(
-                            uri,
-                            wallpaper_type,
-                            video_renderer,
-                            enable_graphics_offload,
-                        ),
-                        WallpaperSource::WorkshopId { workshop_id } => {
-                            warn!(
-                                "workshop_id ({}) requires wallpaper_type: wpe; showing blank",
-                                workshop_id
-                            );
-                            Renderer::with_uri(
-                                "about:blank",
-                                &WallpaperType::Web,
-                                video_renderer,
-                                enable_graphics_offload,
-                            )
-                        }
-                    }
-                };
-                renderer.set_content_fit(content_fit);
-                renderer.set_volume(volume);
-                renderer.set_mute(mute);
-                if let Some(viewport) = viewport {
+        // The layout orders primaries before clones, so a clone's source
+        // renderer is always in `primary_widgets` by the time we reach it.
+        for info in &layout.windows {
+            let window = HotaruApplicationWindow::new(self, launch_mode);
+            window.set_monitor_connector(info.monitor.as_str());
+            window.set_position(Position {
+                x: info.geometry.x,
+                y: info.geometry.y,
+            });
+            window.set_size_request(info.geometry.width, info.geometry.height);
+            debug!(
+                "window size request: {}x{}",
+                info.geometry.width, info.geometry.height
+            );
+            window.set_title(Some(&info.title));
+
+            let child: Option<gtk::Widget> = match &info.role {
+                WindowRole::Primary {
+                    wallpaper_type,
+                    wallpaper_source,
+                } => {
+                    let renderer = build_renderer(wallpaper_type, wallpaper_source, settings);
+                    renderer.set_content_fit(settings.content_fit);
+                    renderer.set_volume(settings.volume);
+                    renderer.set_mute(settings.mute);
+                    let widget = renderer.widget().clone();
+                    primary_widgets.insert(info.monitor.clone(), renderer);
+                    Some(widget)
+                }
+                WindowRole::Clone { source } => primary_widgets.get(source).map(|primary| {
+                    primary
+                        .mirror(settings.enable_graphics_offload, settings.content_fit)
+                        .upcast()
+                }),
+            };
+
+            if let Some(child) = child {
+                if let Some(viewport) = &info.viewport {
                     window.set_child(Some(&wrap_with_viewport(
-                        renderer.widget(),
-                        *window_width,
-                        *window_height,
+                        &child,
+                        info.geometry.width,
+                        info.geometry.height,
                         viewport,
                     )));
                 } else {
-                    window.set_child(Some(renderer.widget()));
+                    window.set_child(Some(&child));
                 }
-                window.present();
-                renderer.play();
-                primary_widgets.insert(monitor.to_string(), renderer);
             }
-        });
+            window.present();
 
-        layout.windows.iter().for_each(|window_info| {
-            if let WindowInfo::Clone {
-                monitor,
-                window_x,
-                window_y,
-                window_width,
-                window_height,
-                window_title,
-                clone_source,
-                viewport,
-            } = window_info
-            {
-                let window = HotaruApplicationWindow::new(self, launch_mode);
-                window.set_monitor_connector(monitor.as_str());
-                window.set_position(Position {
-                    x: *window_x,
-                    y: *window_y,
-                });
-                window.set_size_request(*window_width, *window_height);
-                debug!("window size request: {}x{}", window_width, window_height);
-                window.set_title(Some(window_title));
-                if let Some(primary_widget) = primary_widgets.get(clone_source) {
-                    let widget = primary_widget.mirror(enable_graphics_offload, content_fit);
-                    if let Some(viewport) = viewport {
-                        window.set_child(Some(&wrap_with_viewport(
-                            widget.upcast_ref(),
-                            *window_width,
-                            *window_height,
-                            viewport,
-                        )));
-                    } else {
-                        window.set_child(Some(&widget));
-                    }
+            if matches!(info.role, WindowRole::Primary { .. }) {
+                if let Some(renderer) = primary_widgets.get(&info.monitor) {
+                    renderer.play();
                 }
-                window.present();
             }
-        });
+        }
 
         // Store renderers in shared state
         let mut shared = renderers.borrow_mut();
         shared.clear();
         shared.extend(primary_widgets.into_values());
+    }
+}
+
+/// Construct the renderer for a primary window's wallpaper source.
+fn build_renderer(
+    wallpaper_type: &WallpaperType,
+    wallpaper_source: &WallpaperSource,
+    settings: &RenderSettings,
+) -> Renderer {
+    if *wallpaper_type == WallpaperType::Wpe {
+        // WPE packages resolve their real renderer from project.json,
+        // so they take the whole source (filepath or workshop_id).
+        return Renderer::with_wpe(
+            wallpaper_source,
+            settings.video_renderer,
+            settings.enable_graphics_offload,
+        );
+    }
+    match wallpaper_source {
+        WallpaperSource::Filepath { filepath } => Renderer::with_filepath(
+            filepath,
+            wallpaper_type,
+            settings.video_renderer,
+            settings.enable_graphics_offload,
+        ),
+        WallpaperSource::Uri { uri } => Renderer::with_uri(
+            uri,
+            wallpaper_type,
+            settings.video_renderer,
+            settings.enable_graphics_offload,
+        ),
+        WallpaperSource::WorkshopId { workshop_id } => {
+            warn!(
+                "workshop_id ({}) requires wallpaper_type: wpe; showing blank",
+                workshop_id
+            );
+            Renderer::with_uri(
+                "about:blank",
+                &WallpaperType::Web,
+                settings.video_renderer,
+                settings.enable_graphics_offload,
+            )
+        }
     }
 }
 
