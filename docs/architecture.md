@@ -133,7 +133,7 @@ monitor shows only its region of one large wallpaper.
 |---|---|
 | `x11-desktop` (default) | Sets `_NET_WM_WINDOW_TYPE_DESKTOP` (EWMH) via x11rb, positions the window with `ConfigureWindow`, and clears `_GTK_FRAME_EXTENTS` so Mutter draws no shadow. If the session is Wayland, the process **re-execs itself with `GDK_BACKEND=x11`** to run on XWayland (`fallback_to_xwayland`). |
 | `wayland-layer-shell` | gtk4-layer-shell: `Layer::Background`, anchored to all four edges, exclusive zone −1, keyboard mode `None`, pinned to the target monitor by connector name. |
-| `gnome-ext-hanabi` | Encodes `HanabiParams` (position, keep-at-bottom/minimized/position flags) as JSON into the **window title** (`@io.github.jeffshee.Hotaru!{...}`). The Hanabi shell extension reads the title and manages the window on the GNOME Shell side. |
+| `gnome-ext-hanabi` | Encodes `HanabiParams` as compact JSON into the **window title**: `@io.github.jeffshee.Hotaru!{"p":[x,y],"b":true,"m":true,"k":true}` (`p` position, `b` keep-at-bottom, `m` keep-minimized, `k` keep-position). The Hanabi shell extension reads the title and manages the window on the GNOME Shell side. |
 | `windowed` | Plain decorated window. Development/testing. |
 
 Every window installs a frame-clock tick callback that logs frames-per-second
