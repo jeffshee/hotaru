@@ -142,6 +142,13 @@ which follows the libmpv render-API model: the host owns the GL context,
 frame clock, pointer input and destination FBO, and the engine draws one
 frame per call. The widget therefore mirrors `MpvWidget`'s structure:
 
+- **Backend source** — the fork is pinned as a git submodule at
+  [third_party/linux-wallpaperengine](../third_party/linux-wallpaperengine).
+  Build the library with `make wpe-lib` (inits the submodule recursively,
+  then CMake-builds `liblinux-wallpaperengine-lib.so`). Needs `glm`, `glfw`,
+  `glew`, `SDL2`, `mpv`, `lz4`, `freetype` and X11/Wayland dev headers; the
+  first CMake configure downloads CEF (unused by the embed path — slated for
+  removal).
 - **Runtime loading** — the engine library
   (`liblinux-wallpaperengine-lib.so`) is dlopen'd on first use, so hotaru
   builds and runs without it; loading a scene then logs an error instead of
@@ -154,6 +161,12 @@ frame per call. The widget therefore mirrors `MpvWidget`'s structure:
   `gles-api` to `GDK_DISABLE` before GTK opens the display when built with
   the `scene` feature (`HOTARU_ALLOW_GLES=1` opts out). The GLArea is also
   restricted to `GLAPI::GL`.
+- **ABI guard** — the FFI structs in `scene.rs` are hand-mirrored from
+  `wpe_embed.h`; `wpe_abi_version()` is checked right after dlopen and a
+  mismatched library is refused (blank wallpaper + logged error) rather than
+  risking a layout-corruption crash. Bump `WPE_EMBED_ABI_VERSION` (header)
+  and the `WPE_ABI_VERSION` constant in `scene.rs` in lockstep on any ABI
+  change.
 - **GL symbols** — resolved through the same process-wide loader as
   `MpvWidget` (`src/widget/gl_loader.rs`).
 - **Frame scheduling** — scenes animate continuously: a frame-clock tick

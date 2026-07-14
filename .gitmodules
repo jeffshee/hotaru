@@ -1,0 +1,4 @@
+[submodule "third_party/linux-wallpaperengine"]
+	path = third_party/linux-wallpaperengine
+	url = https://github.com/jeffshee/linux-wallpaperengine.git
+	branch = feat/embed-api

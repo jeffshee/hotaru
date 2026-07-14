@@ -40,6 +40,19 @@ install: $(BUILDDIR) ## Install into PREFIX (default ~/.local, no sudo)
 uninstall: $(BUILDDIR) ## Remove a previous install from PREFIX
 	ninja -C $(BUILDDIR) uninstall
 
+# --- Wallpaper Engine scene backend -----------------------------------------
+
+WPE_DIR   := third_party/linux-wallpaperengine
+WPE_BUILD := $(WPE_DIR)/build
+WPE_LIB   := $(abspath $(WPE_BUILD)/output/liblinux-wallpaperengine-lib.so)
+
+wpe-lib: ## Build the pinned linux-wallpaperengine scene backend (downloads CEF on first configure)
+	git submodule update --init --recursive $(WPE_DIR)
+	cmake -S $(WPE_DIR) -B $(WPE_BUILD) -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+	cmake --build $(WPE_BUILD) --target linux-wallpaperengine-lib -j
+	@echo "Built $(WPE_LIB)"
+	@echo "Run hotaru with: HOTARU_WPE_LIBRARY=$(WPE_LIB)"
+
 # --- Flatpak ----------------------------------------------------------------
 
 flatpak: ## Build & install the Flatpak (pulls SDK/Platform from flathub)
@@ -63,4 +76,4 @@ help: ## Show this help
 		| sort \
 		| awk 'BEGIN {FS = ":.*?## "} {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
 
-.PHONY: run test lint format doc build install uninstall flatpak flatpak-run flatpak-uninstall clean help
+.PHONY: run test lint format doc build install uninstall wpe-lib flatpak flatpak-run flatpak-uninstall clean help
