@@ -4,14 +4,10 @@ project('hotaru', 'rust',
   default_options: [ 'warning_level=2', 'werror=false', ],
 )
 
-i18n = import('i18n')
 gnome = import('gnome')
-
-
 
 subdir('data')
 subdir('src')
-subdir('po')
 
 gnome.post_install(
      glib_compile_schemas: true,

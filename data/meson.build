@@ -1,9 +1,5 @@
-desktop_file = i18n.merge_file(
-        input: 'io.github.jeffshee.Hotaru.desktop.in',
-       output: 'io.github.jeffshee.Hotaru.desktop',
-         type: 'desktop',
-       po_dir: '../po',
-      install: true,
+desktop_file = files('io.github.jeffshee.Hotaru.desktop')
+install_data('io.github.jeffshee.Hotaru.desktop',
   install_dir: get_option('datadir') / 'applications'
 )
 
@@ -12,11 +8,8 @@ if desktop_utils.found()
   test('Validate desktop file', desktop_utils, args: [desktop_file])
 endif
 
-appstream_file = i18n.merge_file(
-        input: 'io.github.jeffshee.Hotaru.metainfo.xml.in',
-       output: 'io.github.jeffshee.Hotaru.metainfo.xml',
-       po_dir: '../po',
-      install: true,
+appstream_file = files('io.github.jeffshee.Hotaru.metainfo.xml')
+install_data('io.github.jeffshee.Hotaru.metainfo.xml',
   install_dir: get_option('datadir') / 'metainfo'
 )
 

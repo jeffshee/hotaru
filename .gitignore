@@ -20,15 +20,16 @@ Cargo.lock
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Project specific
-_build
-builddir
+# Build
+build/
+_build/
 src/config.rs
 
-# Flatpak specific
-.flatpak
-.flatpak-builder
-io.github.jeffshee.Hotaru.flatpak
+# Flatpak build output
+.flatpak/
+.flatpak-builder/
+build-flatpak/
+*.flatpak
 
 # Test files
 test*.*

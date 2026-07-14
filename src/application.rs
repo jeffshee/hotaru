@@ -1,4 +1,4 @@
-// Copyright (C) 2026  Jeff Shee
+// Copyright (C) 2026 Jeff Shee <jeffshee8969@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -23,11 +23,11 @@ use tracing::{debug, info, warn};
 
 use crate::{
     model::{
-        LaunchMode, MonitorListModelExt as _, Viewport, WallpaperConfig, WallpaperSource,
-        WindowInfo, WindowLayout,
+        LaunchMode, MonitorListModelExt as _, VideoRenderer, Viewport, WallpaperConfig,
+        WallpaperSource, WindowInfo, WindowLayout,
     },
     monitor_tracker::MonitorTracker,
-    widget::{Renderer, RendererWidget, ClipBox},
+    widget::{ClipBox, Renderer, RendererWidget},
     window::{HotaruApplicationWindow, Position},
 };
 
@@ -53,7 +53,7 @@ impl HotaruApplication {
     pub fn build_ui(
         &self,
         config: &WallpaperConfig,
-        use_clapper: bool,
+        video_renderer: VideoRenderer,
         enable_graphics_offload: bool,
         content_fit: gtk::ContentFit,
         renderers: &Rc<RefCell<Vec<Renderer>>>,
@@ -95,16 +95,17 @@ impl HotaruApplication {
                     WallpaperSource::Filepath { filepath } => Renderer::with_filepath(
                         filepath,
                         wallpaper_type,
-                        use_clapper,
+                        video_renderer,
                         enable_graphics_offload,
                     ),
                     WallpaperSource::Uri { uri } => Renderer::with_uri(
                         uri,
                         wallpaper_type,
-                        use_clapper,
+                        video_renderer,
                         enable_graphics_offload,
                     ),
                 };
+                renderer.set_content_fit(content_fit);
                 if let Some(viewport) = viewport {
                     window.set_child(Some(&wrap_with_viewport(
                         renderer.widget(),

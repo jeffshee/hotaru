@@ -1,0 +1,5 @@
+option('mpv',
+  type: 'boolean',
+  value: true,
+  description: 'Build the libmpv video renderer (cargo feature "mpv", requires libmpv)',
+)

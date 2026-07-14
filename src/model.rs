@@ -1,4 +1,4 @@
-// Copyright (C) 2026  Jeff Shee
+// Copyright (C) 2026 Jeff Shee <jeffshee8969@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@ mod hanabi_window_params;
 mod launch_mode;
 mod monitor;
 mod source_config;
+mod video_renderer;
 mod wallpaper_config;
 mod window_layout;
 
@@ -26,5 +27,6 @@ pub use hanabi_window_params::HanabiWindowParams;
 pub use launch_mode::LaunchMode;
 pub use monitor::*;
 pub use source_config::*;
+pub use video_renderer::VideoRenderer;
 pub use wallpaper_config::*;
 pub use window_layout::*;

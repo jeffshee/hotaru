@@ -10,8 +10,6 @@ gnome.compile_resources('hotaru',
 
 conf = configuration_data()
 conf.set_quoted('VERSION', meson.project_version())
-conf.set_quoted('GETTEXT_PACKAGE', 'hotaru')
-conf.set_quoted('LOCALEDIR', get_option('prefix') / get_option('localedir'))
 conf.set_quoted('PKGDATADIR', pkgdatadir)
 
 configure_file(
@@ -32,6 +30,10 @@ cargo_bin  = find_program('cargo')
 cargo_opt  = [ '--manifest-path', meson.project_source_root() / 'Cargo.toml' ]
 cargo_opt += [ '--target-dir', meson.project_build_root()  / 'src' ]
 cargo_env  = [ 'CARGO_HOME=' + meson.project_build_root()  / 'cargo-home' ]
+
+if not get_option('mpv')
+  cargo_opt += [ '--no-default-features', '--features', 'base' ]
+endif
 
 if get_option('buildtype') == 'release'
   cargo_opt += [ '--release' ]

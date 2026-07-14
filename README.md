@@ -19,6 +19,12 @@ Also please don't forget to hit that star button! 🌟
 Feel free to open an issue for problems or suggestions 🤗  
 Your support is truly appreciated!
 
+## Documentation 📖
+
+- [Development note](docs/dev.md) — dependencies, build & install, Flatpak
+- [System architecture](docs/architecture.md) — process model, wallpaper config, window layout, launch modes, settings, D-Bus interface, build system
+- [Video renderers](docs/renderers.md) — mpv (default) and GStreamer renderers, content fit
+
 ## Join our Discord!
 
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/mP7yg4gX7g)

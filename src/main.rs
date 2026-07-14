@@ -1,4 +1,4 @@
-// Copyright (C) 2026  Jeff Shee
+// Copyright (C) 2026 Jeff Shee <jeffshee8969@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -31,7 +31,6 @@ use tracing_subscriber::{fmt, layer::SubscriberExt as _, util::SubscriberInitExt
 
 use hotaru::dbus::{register_dbus_service, RendererState};
 use hotaru::prelude::*;
-use hotaru::widget::RendererWidget;
 
 use crate::cli::Cli;
 
@@ -45,6 +44,10 @@ fn main() -> anyhow::Result<()> {
     info!("Hotaru started with args: {:#?}", cli);
 
     gst::init().unwrap();
+    // Register the statically linked gtk4paintablesink so hotaru does not
+    // depend on the system's gst-plugins-rs package. If the system also
+    // provides the plugin, the registry picks the newer version.
+    gstgtk4::plugin_register_static().unwrap();
     gtk::init().unwrap();
 
     let mut app_flags = ApplicationFlags::HANDLES_COMMAND_LINE;
@@ -77,37 +80,19 @@ fn main() -> anyhow::Result<()> {
             glib::closure_local!(move |_monitor_tracker: MonitorTracker, list: ListModel| {
                 let monitor_map = list.try_to_monitor_map().unwrap();
                 debug!("monitor changed: {:?}", monitor_map);
-                if let Some(config) = state_for_monitor.config.borrow().as_ref() {
-                    let launch_mode = *state_for_monitor.launch_mode.borrow();
-                    state_for_monitor
-                        .app
-                        .windows()
-                        .into_iter()
-                        .for_each(|w| w.close());
-                    let use_clapper = state_for_monitor.settings_watcher.is_use_clapper();
-                    let enable_graphics_offload = state_for_monitor
-                        .settings_watcher
-                        .is_enable_graphics_offload();
-                    let fit = state_for_monitor.settings_watcher.content_fit();
-                    state_for_monitor.app.build_ui(
-                        config,
-                        use_clapper,
-                        enable_graphics_offload,
-                        fit,
-                        &state_for_monitor.renderers,
-                        launch_mode,
-                    );
-                    let volume = state_for_monitor.settings_watcher.volume();
-                    let mute = state_for_monitor.settings_watcher.is_mute();
-                    let renderers = state_for_monitor.renderers.clone();
-                    glib::idle_add_local_once(move || {
-                        for renderer in renderers.borrow().iter() {
-                            renderer.set_volume(volume);
-                            renderer.set_mute(mute);
-                        }
-                    });
-                }
+                state_for_monitor.rebuild_ui();
             }),
+        );
+
+        // Switching the video renderer rebuilds the active wallpaper so the
+        // change takes effect immediately.
+        let state_for_renderer = state.clone();
+        state.settings_watcher.settings().connect_changed(
+            Some("video-renderer"),
+            move |_settings, _key| {
+                info!("Video renderer setting changed, rebuilding");
+                state_for_renderer.rebuild_ui();
+            },
         );
 
         // Register the GApplication so it can create windows, but hold it
@@ -149,40 +134,59 @@ fn main() -> anyhow::Result<()> {
         let renderers: Rc<RefCell<Vec<hotaru::widget::Renderer>>> =
             Rc::new(RefCell::new(Vec::new()));
 
-        let app_clone = app.clone();
-        let config_clone = config.clone();
-        let renderers_clone = renderers.clone();
-        let sw_clone = hotaru::settings_watcher::SettingsWatcher::new();
+        // Close all windows and rebuild with freshly-read settings.
+        let rebuild = {
+            let app = app.clone();
+            let config = config.clone();
+            let renderers = renderers.clone();
+            let settings_watcher = hotaru::settings_watcher::SettingsWatcher::new();
+            Rc::new(move || {
+                app.windows().into_iter().for_each(|w| w.close());
+                let video_renderer = settings_watcher.video_renderer();
+                let enable_graphics_offload = settings_watcher.is_enable_graphics_offload();
+                let content_fit = settings_watcher.content_fit();
+                app.build_ui(
+                    &config,
+                    video_renderer,
+                    enable_graphics_offload,
+                    content_fit,
+                    &renderers,
+                    launch_mode,
+                );
+            })
+        };
+
         let monitor_tracker = MonitorTracker::new();
+        let rebuild_clone = rebuild.clone();
         monitor_tracker.connect_closure(
             "monitor-changed",
             false,
             glib::closure_local!(move |_monitor_tracker: MonitorTracker, list: ListModel| {
                 let monitor_map = list.try_to_monitor_map().unwrap();
                 debug!("monitor changed: {:?}", monitor_map);
-                app_clone.windows().into_iter().for_each(|w| w.close());
-                let use_clapper = sw_clone.is_use_clapper();
-                let enable_graphics_offload = sw_clone.is_enable_graphics_offload();
-                let content_fit = sw_clone.content_fit();
-                app_clone.build_ui(
-                    &config_clone,
-                    use_clapper,
-                    enable_graphics_offload,
-                    content_fit,
-                    &renderers_clone,
-                    launch_mode,
-                );
+                rebuild_clone();
             }),
+        );
+
+        // Switching the video renderer rebuilds the wallpaper so the change
+        // takes effect immediately.
+        let rebuild_clone = rebuild.clone();
+        settings_watcher.settings().connect_changed(
+            Some("video-renderer"),
+            move |_settings, _key| {
+                info!("Video renderer setting changed, rebuilding");
+                rebuild_clone();
+            },
         );
 
         let renderers_activate = renderers.clone();
         app.connect_activate(move |app| {
-            let use_clapper = settings_watcher.is_use_clapper();
+            let video_renderer = settings_watcher.video_renderer();
             let enable_graphics_offload = settings_watcher.is_enable_graphics_offload();
             let content_fit = settings_watcher.content_fit();
             app.build_ui(
                 &config,
-                use_clapper,
+                video_renderer,
                 enable_graphics_offload,
                 content_fit,
                 &renderers_activate,

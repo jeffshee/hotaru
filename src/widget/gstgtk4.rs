@@ -1,4 +1,4 @@
-// Copyright (C) 2026  Jeff Shee
+// Copyright (C) 2026 Jeff Shee <jeffshee8969@gmail.com>
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -77,8 +77,9 @@ impl RendererWidget for GstGtk4Widget {
         self.player().stop();
     }
 
-    fn set_volume(&self, volume: f64) {
-        self.player().set_volume(volume);
+    fn set_volume(&self, volume: i32) {
+        // gst-play volume is a 0.0-1.0 linear factor
+        self.player().set_volume(volume as f64 / 100.0);
     }
 
     fn set_mute(&self, mute: bool) {
