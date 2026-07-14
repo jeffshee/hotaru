@@ -122,6 +122,12 @@ mod imp {
     /// default; wallpapers should not render at full monitor refresh.
     const FPS_LIMIT: i64 = 30;
 
+    /// Embed ABI this build was compiled against (WPE_EMBED_ABI_VERSION in
+    /// wpe_embed.h). The structs and signatures below are hand-mirrored from
+    /// that header, so a library reporting a different version cannot be
+    /// trusted — bump this in lockstep with the header.
+    const WPE_ABI_VERSION: c_int = 1;
+
     // Mirrors wpe_init_params in wpe_embed.h.
     #[repr(C)]
     struct WpeInitParams {
@@ -198,6 +204,21 @@ mod imp {
                         }
                     };
                 }
+
+                // Guard the hand-mirrored ABI: a library built from a
+                // different wpe_embed.h could have an incompatible
+                // WpeInitParams layout, which would corrupt memory or crash.
+                let abi_version: unsafe extern "C" fn() -> c_int = sym!(b"wpe_abi_version\0");
+                let reported = unsafe { abi_version() };
+                if reported != WPE_ABI_VERSION {
+                    error!(
+                        "{} reports embed ABI version {}, but this build expects {}; \
+                         rebuild the library and hotaru from matching sources",
+                        lib_name, reported, WPE_ABI_VERSION
+                    );
+                    return None;
+                }
+
                 let resolved = WpeLib {
                     create: sym!(b"wpe_context_create\0"),
                     render: sym!(b"wpe_context_render\0"),
