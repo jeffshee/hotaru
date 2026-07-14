@@ -99,7 +99,7 @@ mod imp {
     };
     use tracing::{debug, error, info, warn};
 
-    use crate::widget::gl_loader::{
+    use crate::renderer::gl_loader::{
         current_framebuffer_binding, get_proc_address_str, init_gl_resolver,
     };
 

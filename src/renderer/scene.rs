@@ -82,7 +82,7 @@ mod imp {
     use glib::Properties;
     use tracing::{error, info};
 
-    use crate::widget::gl_loader::{
+    use crate::renderer::gl_loader::{
         current_framebuffer_binding, get_proc_address_cstr, init_gl_resolver,
     };
 

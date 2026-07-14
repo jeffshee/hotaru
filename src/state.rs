@@ -30,8 +30,8 @@ use tracing::{debug, info};
 use crate::application::HotaruApplication;
 use crate::model::{LaunchMode, MonitorListModelExt as _, WallpaperConfig};
 use crate::monitor_tracker::MonitorTracker;
+use crate::renderer::{Renderer, RendererWidget};
 use crate::settings_watcher::SettingsWatcher;
-use crate::widget::{Renderer, RendererWidget};
 
 /// The lowercase string form (strum) is the D-Bus `State` property value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum_macros::Display)]

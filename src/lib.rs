@@ -20,9 +20,9 @@ pub mod constants;
 pub mod dbus;
 pub mod model;
 pub mod monitor_tracker;
+pub mod renderer;
 pub mod settings_watcher;
 pub mod state;
-pub mod widget;
 pub mod window;
 pub mod wpe;
 

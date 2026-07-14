@@ -25,7 +25,7 @@ use tracing::{info, warn};
 
 use crate::constants::APPLICATION_ID;
 use crate::model::VideoRenderer;
-use crate::widget::{Renderer, RendererWidget};
+use crate::renderer::{Renderer, RendererWidget};
 
 /// A point-in-time snapshot of the settings a renderer build needs.
 #[derive(Debug, Clone, Copy)]

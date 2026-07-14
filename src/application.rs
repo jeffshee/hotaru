@@ -27,8 +27,8 @@ use crate::{
         WallpaperType, WindowLayout, WindowRole,
     },
     monitor_tracker::MonitorTracker,
+    renderer::{ClipBox, Renderer, RendererWidget},
     settings_watcher::RenderSettings,
-    widget::{ClipBox, Renderer, RendererWidget},
     window::{HotaruApplicationWindow, Position},
 };
 
