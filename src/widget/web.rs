@@ -110,6 +110,18 @@ mod imp {
 
             let obj = self.obj();
             let webview = WebView::builder().build();
+
+            // WPE web wallpapers load local assets (Spine skeletons/atlases,
+            // textures, JSON) via XHR/fetch, which WebKit blocks for file://
+            // origins by default — so such wallpapers render only partially
+            // (e.g. cursor/canvas effects but no character). Allow local file
+            // access, matching the browser environment Wallpaper Engine runs
+            // them in.
+            let settings = webkit::Settings::new();
+            settings.set_allow_file_access_from_file_urls(true);
+            settings.set_allow_universal_access_from_file_urls(true);
+            webview.set_settings(&settings);
+
             webview.set_hexpand(true);
             webview.set_vexpand(true);
             obj.append(&webview);
