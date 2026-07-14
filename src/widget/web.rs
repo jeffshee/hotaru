@@ -165,8 +165,15 @@ mod imp {
                 &[],
                 &[],
             ));
+            // WPE web wallpapers autoplay bundled audio/video (e.g. album
+            // wallpapers); WebKit blocks autoplay with sound by default
+            // (requires a user gesture). Allow it, matching WPE's browser.
+            let policies = webkit::WebsitePolicies::builder()
+                .autoplay(webkit::AutoplayPolicy::Allow)
+                .build();
             let webview = WebView::builder()
                 .user_content_manager(&content_manager)
+                .website_policies(&policies)
                 .build();
 
             // WPE web wallpapers load local assets (Spine skeletons/atlases,
