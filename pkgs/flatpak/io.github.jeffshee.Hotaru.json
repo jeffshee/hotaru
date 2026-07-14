@@ -49,6 +49,11 @@
     "modules" : [
         "gtk4-layer-shell.json",
         "libmpv.json",
+        "glm.json",
+        "glfw.json",
+        "shared-modules/glu/glu-9.json",
+        "shared-modules/glew/glew.json",
+        "linux-wallpaperengine.json",
         {
             "name" : "hotaru",
             "builddir" : true,

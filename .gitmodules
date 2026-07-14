@@ -2,3 +2,6 @@
 	path = third_party/linux-wallpaperengine
 	url = https://github.com/jeffshee/linux-wallpaperengine.git
 	branch = feat/embed-api
+[submodule "pkgs/flatpak/shared-modules"]
+	path = pkgs/flatpak/shared-modules
+	url = https://github.com/flathub/shared-modules.git

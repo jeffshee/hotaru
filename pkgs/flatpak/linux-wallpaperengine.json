@@ -1,0 +1,22 @@
+{
+    "name": "linux-wallpaperengine",
+    "buildsystem": "simple",
+    "build-commands": [
+        "cmake -G Ninja -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_WEB=OFF -DBUILD_TESTING=OFF -DCMAKE_PREFIX_PATH=/app",
+        "cmake --build build --target linux-wallpaperengine-lib -j $FLATPAK_BUILDER_N_JOBS",
+        "install -Dm755 build/output/liblinux-wallpaperengine-lib.so /app/lib/liblinux-wallpaperengine-lib.so",
+        "cp -P build/lib/libkissfft-float.so* /app/lib/"
+    ],
+    "sources": [
+        {
+            "type": "dir",
+            "path": "../../third_party/linux-wallpaperengine",
+            "skip": [
+                ".git",
+                "build",
+                "build-noweb",
+                ".deps"
+            ]
+        }
+    ]
+}

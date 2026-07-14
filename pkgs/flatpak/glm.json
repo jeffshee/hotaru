@@ -1,0 +1,15 @@
+{
+    "name": "glm",
+    "buildsystem": "simple",
+    "build-commands": [
+        "mkdir -p /app/include",
+        "cp -r glm /app/include/"
+    ],
+    "sources": [
+        {
+            "type": "git",
+            "url": "https://github.com/g-truc/glm.git",
+            "commit": "0af55ccecd98d4e5a8d1fad7de25ba429d60e863"
+        }
+    ]
+}
