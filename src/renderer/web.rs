@@ -232,8 +232,9 @@ mod imp {
                     }
                     let js = format!(
                         "(function(){{var l=window.wallpaperPropertyListener;if(!l)return;\
-                         if(l.applyGeneralProperties)l.applyGeneralProperties({{fps:60}});\
+                         if(l.applyGeneralProperties)l.applyGeneralProperties({{fps:{fps}}});\
                          if(l.applyUserProperties)l.applyUserProperties({props});}})();",
+                        fps = crate::wpe::fps_limit(),
                         props = &*props
                     );
                     webview.evaluate_javascript(

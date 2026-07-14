@@ -92,21 +92,7 @@ mod imp {
     const ASSETS_ENV: &str = "HOTARU_WPE_ASSETS";
     const DEFAULT_LIBRARY: &str = "liblinux-wallpaperengine-lib.so";
 
-    /// Scene render-rate cap in FPS. Kept below very high refresh rates to
-    /// bound GPU use; override with `HOTARU_WPE_FPS`.
-    const FPS_ENV: &str = "HOTARU_WPE_FPS";
-    const DEFAULT_FPS: i64 = 60;
-
-    fn fps_limit() -> i64 {
-        static FPS: OnceLock<i64> = OnceLock::new();
-        *FPS.get_or_init(|| {
-            std::env::var(FPS_ENV)
-                .ok()
-                .and_then(|v| v.parse::<i64>().ok())
-                .filter(|&v| v > 0)
-                .unwrap_or(DEFAULT_FPS)
-        })
-    }
+    use crate::wpe::fps_limit;
 
     /// Embed ABI this build was compiled against (WPE_EMBED_ABI_VERSION in
     /// wpe_embed.h). The structs and signatures below are hand-mirrored from

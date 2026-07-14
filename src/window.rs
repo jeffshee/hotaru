@@ -48,113 +48,70 @@ impl HotaruApplicationWindow {
             .build()
     }
 
+    /// Run `operation` with an X11 connection and this window's xid.
+    /// A no-op (with an error log) when the window has no X11 surface.
+    fn with_x11_window(
+        &self,
+        operation: impl FnOnce(&x11rb::rust_connection::RustConnection, u32) -> anyhow::Result<()>,
+    ) {
+        let Some(surface) = self.surface() else {
+            error!("Failed to get Surface");
+            return;
+        };
+        let Ok(x11_surface) = surface.downcast::<X11Surface>() else {
+            error!("Failed to downcast Surface to X11Surface");
+            return;
+        };
+        let xid = x11_surface.xid() as u32;
+        debug!("xid: {xid}");
+        let conn = match x11rb::connect(None) {
+            Ok((conn, _screen_num)) => conn,
+            Err(e) => {
+                error!("Failed to connect to X11: {}", e);
+                return;
+            }
+        };
+        if let Err(e) = operation(&conn, xid).and_then(|_| Ok(conn.flush()?)) {
+            error!("X11 window operation failed: {}", e);
+        }
+    }
+
     fn set_x11_window_position(&self, x: i32, y: i32) {
         debug!("set_x11_window_position: {x}, {y}");
-        if let Some(surface) = self.surface() {
-            if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
-                let xid = x11_surface.xid();
-                debug!("xid: {xid}");
-                let (conn, _screen_num) = x11rb::connect(None).unwrap();
-                let position = ConfigureWindowAux::new().x(x).y(y);
-
-                let operation = move || {
-                    conn.configure_window(xid as u32, &position)
-                        .and_then(|_| conn.flush())
-                        .unwrap_or_else(|e| error!("Failed to position window: {}", e));
-                };
-                if self.is_mapped() {
-                    operation();
-                }
-                self.connect_map(move |_window| {
-                    operation();
-                });
-            } else {
-                error!("Failed to downcast Surface to X11Surface");
-            }
-        } else {
-            error!("Failed to get Surface");
-        }
+        self.with_x11_window(|conn, xid| {
+            conn.configure_window(xid, &ConfigureWindowAux::new().x(x).y(y))?;
+            Ok(())
+        });
     }
 
-    fn set_x11_window_type_hint(&self) {
-        debug!("set_x11_window_type_hint");
-        if let Some(surface) = self.surface() {
-            if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
-                let xid = x11_surface.xid();
-                debug!("xid: {xid}");
-                let (conn, _screen_num) = x11rb::connect(None).unwrap();
-                let net_wm_window_type = conn
-                    .intern_atom(false, b"_NET_WM_WINDOW_TYPE")
-                    .unwrap()
-                    .reply()
-                    .unwrap()
-                    .atom;
-                let net_wm_window_type_desktop = conn
-                    .intern_atom(false, b"_NET_WM_WINDOW_TYPE_DESKTOP")
-                    .unwrap()
-                    .reply()
-                    .unwrap()
-                    .atom;
-
-                let operation = move || {
-                    conn.change_property32(
-                        PropMode::REPLACE,
-                        xid as u32,
-                        net_wm_window_type,
-                        AtomEnum::ATOM,
-                        &[net_wm_window_type_desktop],
-                    )
-                    .and_then(|_| conn.flush())
-                    .unwrap_or_else(|e| error!("Failed to set window type hint: {}", e));
-                };
-                if self.is_mapped() {
-                    operation();
-                }
-                self.connect_map(move |_window| {
-                    operation();
-                });
-            } else {
-                error!("Failed to downcast Surface to X11Surface");
-            }
-        } else {
-            error!("Failed to get Surface");
-        }
-    }
-
-    /// Set `_GTK_FRAME_EXTENTS` to zero so Mutter does not draw a
-    /// compositor-side shadow around the window.
-    fn clear_x11_frame_extents(&self) {
-        debug!("clear_x11_frame_extents");
-        if let Some(surface) = self.surface() {
-            if let Ok(x11_surface) = surface.downcast::<X11Surface>() {
-                let xid = x11_surface.xid();
-                let (conn, _screen_num) = x11rb::connect(None).unwrap();
-                let gtk_frame_extents = conn
-                    .intern_atom(false, b"_GTK_FRAME_EXTENTS")
-                    .unwrap()
-                    .reply()
-                    .unwrap()
-                    .atom;
-
-                let operation = move || {
-                    conn.change_property32(
-                        PropMode::REPLACE,
-                        xid as u32,
-                        gtk_frame_extents,
-                        AtomEnum::CARDINAL,
-                        &[0, 0, 0, 0],
-                    )
-                    .and_then(|_| conn.flush())
-                    .unwrap_or_else(|e| error!("Failed to clear frame extents: {}", e));
-                };
-                if self.is_mapped() {
-                    operation();
-                }
-                self.connect_map(move |_window| {
-                    operation();
-                });
-            }
-        }
+    /// Apply the X11 desktop-window properties: the DESKTOP window type
+    /// hint, zeroed `_GTK_FRAME_EXTENTS` (so Mutter draws no compositor-side
+    /// shadow), and the window position. Called on map, and the position
+    /// again whenever it changes.
+    fn apply_x11_desktop_setup(&self) {
+        debug!("apply_x11_desktop_setup");
+        let position = self.position();
+        self.with_x11_window(|conn, xid| {
+            let atom = |name: &[u8]| -> anyhow::Result<u32> {
+                Ok(conn.intern_atom(false, name)?.reply()?.atom)
+            };
+            conn.change_property32(
+                PropMode::REPLACE,
+                xid,
+                atom(b"_NET_WM_WINDOW_TYPE")?,
+                AtomEnum::ATOM,
+                &[atom(b"_NET_WM_WINDOW_TYPE_DESKTOP")?],
+            )?;
+            conn.change_property32(
+                PropMode::REPLACE,
+                xid,
+                atom(b"_GTK_FRAME_EXTENTS")?,
+                AtomEnum::CARDINAL,
+                &[0, 0, 0, 0],
+            )?;
+            conn.configure_window(xid, &ConfigureWindowAux::new().x(position.x).y(position.y))?;
+            Ok(())
+        });
     }
 
     fn set_hanabi_window_title(&self) {
@@ -225,12 +182,9 @@ mod imp {
 
             match obj.launch_mode() {
                 LaunchMode::X11Desktop => {
-                    obj.connect_realize(move |window| {
-                        window.set_x11_window_type_hint();
-                        window.clear_x11_frame_extents();
-                        let position = window.position();
-                        window.set_x11_window_position(position.x, position.y);
-                    });
+                    // Applied on every map: a remap starts from fresh X
+                    // window state, so the hints must be set again.
+                    obj.connect_map(|window| window.apply_x11_desktop_setup());
                 }
                 LaunchMode::WaylandLayerShell => {
                     obj.init_layer_shell();
@@ -283,7 +237,11 @@ mod imp {
 
                 match window.launch_mode() {
                     LaunchMode::X11Desktop => {
-                        window.set_x11_window_position(position.x, position.y);
+                        // While unmapped, the map handler applies the
+                        // (property-stored) position instead.
+                        if window.is_mapped() {
+                            window.set_x11_window_position(position.x, position.y);
+                        }
                     }
                     LaunchMode::GnomeExtHanabi => {
                         window.set_hanabi_window_title();

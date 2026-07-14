@@ -95,6 +95,9 @@ mod imp {
         uri: RefCell<String>,
         #[property(get, set, construct_only, name = "enable-graphics-offload")]
         enable_graphics_offload: Cell<bool>,
+        // All of these are unconditionally created in constructed(); the
+        // Option wrappers exist only because those types have no Default
+        // (which the derived struct Default needs).
         sink: RefCell<Option<gst::Element>>,
         renderer: RefCell<Option<gst_play::PlayVideoOverlayVideoRenderer>>,
         #[property(get)]

@@ -24,7 +24,9 @@ mod window_layout;
 
 pub use hanabi_window_params::HanabiWindowParams;
 pub use launch_mode::LaunchMode;
-pub use monitor::*;
+pub use monitor::{MonitorError, MonitorInfo, MonitorListModelExt, MonitorMap};
 pub use video_renderer::VideoRenderer;
-pub use wallpaper_config::*;
-pub use window_layout::*;
+pub use wallpaper_config::{
+    MonitorConfig, WallpaperConfig, WallpaperMode, WallpaperSource, WallpaperType,
+};
+pub use window_layout::{Viewport, WindowGeometry, WindowInfo, WindowLayout, WindowRole};
