@@ -146,6 +146,7 @@ impl Renderer {
                 Ok(entry) => Self::Web(WebWidget::with_wpe(
                     &entry.to_string_lossy(),
                     &package.user_properties_json(),
+                    &package.dir.to_string_lossy(),
                 )),
                 Err(e) => {
                     tracing::error!("Invalid Wallpaper Engine package: {:#}", e);

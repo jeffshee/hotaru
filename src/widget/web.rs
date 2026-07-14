@@ -29,7 +29,10 @@ glib::wrapper! {
 impl RendererWidgetBuilder for WebWidget {
     fn with_filepath(filepath: &str) -> Self {
         let uri = gio::File::for_path(filepath).uri();
-        Self::with_uri(&uri)
+        Object::builder()
+            .property("uri", uri.as_str())
+            .property("sandbox-path", parent_dir(filepath))
+            .build()
     }
 
     fn with_uri(uri: &str) -> Self {
@@ -38,16 +41,27 @@ impl RendererWidgetBuilder for WebWidget {
 }
 
 impl WebWidget {
-    /// Build a web wallpaper for a Wallpaper Engine package: load `filepath`
-    /// and deliver `properties` (JSON `{name:{value:…}}`) to the wallpaper's
-    /// `applyUserProperties` once loaded.
-    pub fn with_wpe(filepath: &str, properties: &str) -> Self {
+    /// Build a web wallpaper for a Wallpaper Engine package rooted at
+    /// `package_dir`: load `filepath` and deliver `properties` (JSON
+    /// `{name:{value:…}}`) to the wallpaper's `applyUserProperties` once
+    /// loaded. The package directory is granted into WebKit's sandbox so the
+    /// wallpaper's bundled media plays (see `sandbox-path`).
+    pub fn with_wpe(filepath: &str, properties: &str, package_dir: &str) -> Self {
         let uri = gio::File::for_path(filepath).uri();
         Object::builder()
-            .property("uri", &uri)
+            .property("uri", uri.as_str())
             .property("wpe-properties", properties)
+            .property("sandbox-path", package_dir)
             .build()
     }
+}
+
+/// The absolute parent directory of `filepath`, for sandbox grants.
+fn parent_dir(filepath: &str) -> String {
+    let path = std::fs::canonicalize(filepath).unwrap_or_else(|_| filepath.into());
+    path.parent()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 impl RendererWidget for WebWidget {
@@ -103,6 +117,15 @@ mod imp {
         /// `applyUserProperties` after load. Empty for non-WPE web wallpapers.
         #[property(get, set, name = "wpe-properties")]
         wpe_properties: RefCell<String>,
+        /// Directory granted read-only into WebKit's sandbox. Local media
+        /// (`<audio>`/`<video>`) is read by GStreamer `filesrc` inside the
+        /// sandboxed WebProcess — unlike page subresources, which the
+        /// unsandboxed NetworkProcess fetches — so without this grant a
+        /// wallpaper's bundled media fails with SRC_NOT_SUPPORTED. Must be
+        /// set at construction: sandbox grants are immutable once the web
+        /// process has spawned. Empty for remote (non-file) wallpapers.
+        #[property(get, set, construct, name = "sandbox-path")]
+        sandbox_path: RefCell<String>,
         #[property(get)]
         webview: RefCell<WebView>,
     }
@@ -171,7 +194,19 @@ mod imp {
             let policies = webkit::WebsitePolicies::builder()
                 .autoplay(webkit::AutoplayPolicy::Allow)
                 .build();
+            // A per-widget WebContext, so the wallpaper's directory can be
+            // granted into this widget's sandbox (see `sandbox-path`). The
+            // grant must precede the first load — a web process only inherits
+            // paths granted before it spawns.
+            let context = webkit::WebContext::new();
+            let sandbox_path = self.sandbox_path.borrow();
+            if !sandbox_path.is_empty() {
+                debug!("granting WebKit sandbox read access to {}", sandbox_path);
+                context.add_path_to_sandbox(std::path::Path::new(&*sandbox_path), true);
+            }
+            drop(sandbox_path);
             let webview = WebView::builder()
+                .web_context(&context)
                 .user_content_manager(&content_manager)
                 .website_policies(&policies)
                 .build();
@@ -191,6 +226,11 @@ mod imp {
             // Media (incl. each new <audio> a playlist creates) may play
             // without a user gesture — a desktop wallpaper never gets one.
             settings.set_media_playback_requires_user_gesture(false);
+            // Opt-in: route the wallpaper's JS console to stdout for debugging
+            // (HOTARU_WEB_CONSOLE=1). Web wallpapers have no visible console.
+            if std::env::var_os("HOTARU_WEB_CONSOLE").is_some() {
+                settings.set_enable_write_console_messages_to_stdout(true);
+            }
             webview.set_settings(&settings);
 
             // Once the page has loaded, hand the wallpaper its properties the

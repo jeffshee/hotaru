@@ -176,12 +176,17 @@ linux-wallpaperengine does not implement at all:
   first paint under the default software→GPU promotion).
 - **Media playback** — autoplay is allowed and `media-playback-requires-user-gesture`
   is off (a desktop wallpaper gets no gesture), so wallpapers that autoplay
-  bundled audio/video play. WebKit's WebProcess sandbox can't reach the system
-  GStreamer decoders in some environments (`<audio>`/`<video>` fail with
-  `SRC_NOT_SUPPORTED`), so `main()` sets `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS`;
-  `HOTARU_WEBKIT_SANDBOX=1` keeps the sandbox (max isolation, but web media
-  won't play). Interactive players that need a click to start still won't (a
-  wallpaper receives no pointer events).
+  bundled audio/video play. Local `<audio>`/`<video>` files are read by
+  GStreamer `filesrc` *inside* WebKit's sandboxed WebProcess (unlike page
+  subresources, which the unsandboxed NetworkProcess fetches), so each
+  local-file WebWidget grants its wallpaper's directory read-only into its
+  own `WebContext` sandbox — the sandbox stays fully enabled. Escape hatch:
+  `HOTARU_WEBKIT_SANDBOX=0` disables WebKit's sandbox entirely, for
+  wallpapers that read local media from outside their own directory.
+  Interactive players that need a click to start still won't (a wallpaper
+  receives no pointer events).
+- **Debugging** — `HOTARU_WEB_CONSOLE=1` routes the wallpaper's JS console
+  to stdout (wallpapers have no visible console).
 
 This is emulation: audio-reactive and media-integration wallpapers run but
 don't react (no real spectrum / now-playing feed).

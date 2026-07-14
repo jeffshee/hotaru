@@ -58,13 +58,12 @@ fn main() -> anyhow::Result<()> {
         std::env::set_var("GDK_DISABLE", disable);
     }
 
-    // WebKit runs its web content in a bubblewrap-sandboxed process whose
-    // media pipeline can't reach the system GStreamer decoders in some
-    // environments, so <audio>/<video> in web wallpapers fail to play
-    // (SRC_NOT_SUPPORTED). Disable that sandbox so web-wallpaper media works.
-    // Wallpaper content is local and user-installed; set HOTARU_WEBKIT_SANDBOX=1
-    // to keep the sandbox (max isolation, but web-wallpaper media won't play).
-    if std::env::var_os("HOTARU_WEBKIT_SANDBOX").is_none() {
+    // WebKit's sandboxed WebProcess reads local <audio>/<video> files itself
+    // (GStreamer filesrc), so web wallpapers get their directory granted into
+    // the sandbox (see widget/web.rs) and the sandbox stays enabled. Escape
+    // hatch: HOTARU_WEBKIT_SANDBOX=0 disables WebKit's sandbox entirely, for
+    // wallpapers that read local media from outside their own directory.
+    if std::env::var("HOTARU_WEBKIT_SANDBOX").as_deref() == Ok("0") {
         std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
     }
 
