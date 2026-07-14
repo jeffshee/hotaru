@@ -174,6 +174,14 @@ linux-wallpaperengine does not implement at all:
   property-gated rendering, e.g. which model/quality a wallpaper loads.
 - **Hardware-accelerated compositing** forced on (WebGL wallpapers glitch on
   first paint under the default software→GPU promotion).
+- **Media playback** — autoplay is allowed and `media-playback-requires-user-gesture`
+  is off (a desktop wallpaper gets no gesture), so wallpapers that autoplay
+  bundled audio/video play. WebKit's WebProcess sandbox can't reach the system
+  GStreamer decoders in some environments (`<audio>`/`<video>` fail with
+  `SRC_NOT_SUPPORTED`), so `main()` sets `WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS`;
+  `HOTARU_WEBKIT_SANDBOX=1` keeps the sandbox (max isolation, but web media
+  won't play). Interactive players that need a click to start still won't (a
+  wallpaper receives no pointer events).
 
 This is emulation: audio-reactive and media-integration wallpapers run but
 don't react (no real spectrum / now-playing feed).
