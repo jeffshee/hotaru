@@ -21,9 +21,9 @@
 //! with a logged error instead of a startup failure.
 
 use glib::Object;
-use gtk::{gio, glib, prelude::*, subclass::prelude::*};
+use gtk::{glib, prelude::*, subclass::prelude::*};
 
-use super::{RendererWidget, RendererWidgetBuilder};
+use super::{mirror_by_snapshot, RendererWidget};
 
 glib::wrapper! {
     pub struct SceneWidget(ObjectSubclass<imp::SceneWidget>)
@@ -31,45 +31,19 @@ glib::wrapper! {
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
-impl RendererWidgetBuilder for SceneWidget {
-    fn with_filepath(filepath: &str) -> Self {
+impl SceneWidget {
+    /// Scenes are always local package directories, so there is no URI
+    /// constructor.
+    pub fn with_filepath(filepath: &str) -> Self {
         Object::builder().property("filepath", filepath).build()
-    }
-
-    fn with_uri(uri: &str) -> Self {
-        // Scenes are always local directories; accept file:// URIs for
-        // config symmetry with the other renderers.
-        match gio::File::for_uri(uri).path() {
-            Some(path) => Self::with_filepath(&path.to_string_lossy()),
-            None => {
-                tracing::error!("scene wallpaper requires a local path, got: {}", uri);
-                Self::with_filepath("")
-            }
-        }
     }
 }
 
 impl RendererWidget for SceneWidget {
     fn mirror(&self, enable_graphics_offload: bool, content_fit: gtk::ContentFit) -> gtk::Box {
         // The scene renders straight into its GLArea and exposes no
-        // gdk::Paintable, so mirror by snapshotting the widget, same as
-        // MpvWidget and WebWidget.
-        let widget = gtk::Box::builder().build();
-        let paintable = gtk::WidgetPaintable::new(Some(&self.gl_area()));
-        let picture = gtk::Picture::builder()
-            .paintable(&paintable)
-            .hexpand(true)
-            .vexpand(true)
-            .content_fit(content_fit)
-            .build();
-        if enable_graphics_offload {
-            let offload = gtk::GraphicsOffload::new(Some(&picture));
-            offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
-            widget.append(&offload);
-        } else {
-            widget.append(&picture);
-        }
-        widget
+        // gdk::Paintable.
+        mirror_by_snapshot(&self.gl_area(), enable_graphics_offload, content_fit)
     }
 
     fn play(&self) {

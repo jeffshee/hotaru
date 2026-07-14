@@ -19,7 +19,7 @@ use glib::Object;
 use gtk::{gio, glib, prelude::*};
 use tracing::info;
 
-use super::RendererWidget;
+use super::{picture_box, RendererWidget};
 
 glib::wrapper! {
     pub struct GstGtk4Widget(ObjectSubclass<imp::GstGtk4Widget>)
@@ -43,25 +43,13 @@ impl GstGtk4Widget {
 
 impl RendererWidget for GstGtk4Widget {
     fn mirror(&self, enable_graphics_offload: bool, content_fit: gtk::ContentFit) -> gtk::Box {
-        let widget = gtk::Box::builder().build();
+        // The sink exposes a real gdk::Paintable, so clones share the video
+        // texture directly instead of snapshotting the widget.
         let paintable = self.paintable().unwrap();
-        let picture = gtk::Picture::builder()
-            .paintable(&paintable)
-            .hexpand(true)
-            .vexpand(true)
-            .content_fit(content_fit)
-            .build();
+        let (widget, picture) = picture_box(&paintable, enable_graphics_offload, content_fit);
         self.picture()
             .bind_property("content-fit", &picture, "content-fit")
             .build();
-
-        if enable_graphics_offload {
-            let offload = gtk::GraphicsOffload::new(Some(&picture));
-            offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
-            widget.append(&offload);
-        } else {
-            widget.append(&picture);
-        }
         widget
     }
 

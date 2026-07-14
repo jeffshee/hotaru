@@ -18,7 +18,7 @@
 use glib::Object;
 use gtk::{gio, glib, prelude::*};
 
-use super::{RendererWidget, RendererWidgetBuilder};
+use super::{mirror_by_snapshot, RendererWidget};
 
 glib::wrapper! {
     pub struct WebWidget(ObjectSubclass<imp::WebWidget>)
@@ -26,8 +26,8 @@ glib::wrapper! {
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
-impl RendererWidgetBuilder for WebWidget {
-    fn with_filepath(filepath: &str) -> Self {
+impl WebWidget {
+    pub fn with_filepath(filepath: &str) -> Self {
         let uri = gio::File::for_path(filepath).uri();
         Object::builder()
             .property("uri", uri.as_str())
@@ -35,12 +35,9 @@ impl RendererWidgetBuilder for WebWidget {
             .build()
     }
 
-    fn with_uri(uri: &str) -> Self {
+    pub fn with_uri(uri: &str) -> Self {
         Object::builder().property("uri", uri).build()
     }
-}
-
-impl WebWidget {
     /// Build a web wallpaper for a Wallpaper Engine package rooted at
     /// `package_dir`: load `filepath` and deliver `properties` (JSON
     /// `{name:{value:…}}`) to the wallpaper's `applyUserProperties` once
@@ -66,22 +63,8 @@ fn parent_dir(filepath: &str) -> String {
 
 impl RendererWidget for WebWidget {
     fn mirror(&self, enable_graphics_offload: bool, content_fit: gtk::ContentFit) -> gtk::Box {
-        let widget = gtk::Box::builder().build();
-        let paintable = gtk::WidgetPaintable::new(Some(&self.webview()));
-        let picture = gtk::Picture::builder()
-            .paintable(&paintable)
-            .hexpand(true)
-            .vexpand(true)
-            .content_fit(content_fit)
-            .build();
-        if enable_graphics_offload {
-            let offload = gtk::GraphicsOffload::new(Some(&picture));
-            offload.set_enabled(gtk::GraphicsOffloadEnabled::Enabled);
-            widget.append(&offload);
-        } else {
-            widget.append(&picture);
-        }
-        widget
+        // The WebView exposes no gdk::Paintable, so mirror by snapshot.
+        mirror_by_snapshot(&self.webview(), enable_graphics_offload, content_fit)
     }
 
     fn play(&self) {}
