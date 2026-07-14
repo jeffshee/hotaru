@@ -18,8 +18,6 @@
 pub const APPLICATION_ID: &str = "io.github.jeffshee.Hotaru";
 pub const WINDOW_TITLE: &str = "Hotaru Renderer";
 
-pub const HANABI_APPLICATION_ID: &str = "io.github.jeffshee.HanabiRenderer";
-
 /// Steam app id for Wallpaper Engine; its workshop items live under
 /// `steamapps/workshop/content/<this>/<workshop-id>`.
 pub const WPE_WORKSHOP_APP_ID: &str = "431960";

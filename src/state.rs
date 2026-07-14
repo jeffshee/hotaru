@@ -29,7 +29,7 @@ use tracing::{debug, info};
 
 use crate::application::HotaruApplication;
 use crate::model::{LaunchMode, MonitorListModelExt as _, WallpaperConfig};
-use crate::monitor_tracker::MonitorTracker;
+use crate::monitor_watcher::MonitorWatcher;
 use crate::renderer::{Renderer, RendererWidget};
 use crate::settings_watcher::SettingsWatcher;
 
@@ -75,12 +75,12 @@ impl RendererState {
     /// Rebuild the wallpaper whenever the monitors change or the
     /// video-renderer setting is switched (no-op while no wallpaper is
     /// active). Wires both modes' triggers in one place.
-    pub fn watch_changes(self: &Rc<Self>, monitor_tracker: &MonitorTracker) {
+    pub fn watch_changes(self: &Rc<Self>, monitor_watcher: &MonitorWatcher) {
         let state = self.clone();
-        monitor_tracker.connect_closure(
+        monitor_watcher.connect_closure(
             "monitor-changed",
             false,
-            glib::closure_local!(move |_monitor_tracker: MonitorTracker, list: ListModel| {
+            glib::closure_local!(move |_monitor_tracker: MonitorWatcher, list: ListModel| {
                 let monitor_map = list.monitor_map().unwrap();
                 debug!("monitor changed: {:?}", monitor_map);
                 state.rebuild_ui();

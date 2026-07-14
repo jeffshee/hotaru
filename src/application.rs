@@ -22,12 +22,13 @@ use gtk::{gdk::Display, gio, glib, glib::Type, prelude::*};
 use tracing::{debug, info, warn};
 
 use crate::{
+    clip_box::ClipBox,
     model::{
         LaunchMode, MonitorListModelExt as _, Viewport, WallpaperConfig, WallpaperSource,
         WallpaperType, WindowLayout, WindowRole,
     },
-    monitor_tracker::MonitorTracker,
-    renderer::{ClipBox, Renderer, RendererWidget},
+    monitor_watcher::MonitorWatcher,
+    renderer::{Renderer, RendererWidget},
     settings_watcher::RenderSettings,
     window::{HotaruApplicationWindow, Position},
 };
@@ -58,7 +59,7 @@ impl HotaruApplication {
         renderers: &Rc<RefCell<Vec<Renderer>>>,
         launch_mode: LaunchMode,
     ) {
-        let monitor_map = MonitorTracker::monitors().unwrap().monitor_map().unwrap();
+        let monitor_map = MonitorWatcher::monitors().unwrap().monitor_map().unwrap();
         info!("Monitor map: {:#?}", monitor_map);
 
         let layout = WindowLayout::new(config, &monitor_map);

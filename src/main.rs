@@ -85,8 +85,8 @@ fn main() -> anyhow::Result<()> {
     // Both modes share the same state object and rebuild path: monitor
     // changes and video-renderer switches rebuild the active wallpaper.
     let state = RendererState::new(app.clone());
-    let monitor_tracker = MonitorTracker::new();
-    state.watch_changes(&monitor_tracker);
+    let monitor_watcher = MonitorWatcher::new();
+    state.watch_changes(&monitor_watcher);
 
     if cli.daemon {
         // Daemon mode: register D-Bus service and wait for commands

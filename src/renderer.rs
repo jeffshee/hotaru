@@ -15,7 +15,6 @@
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-mod clip_box;
 #[cfg(any(feature = "mpv", feature = "wpe"))]
 mod gl_loader;
 mod gstgtk4;
@@ -31,7 +30,6 @@ use gtk::{gdk, prelude::*, Widget};
 use crate::model::{VideoRenderer, WallpaperSource, WallpaperType};
 use crate::wpe::{WpePackage, WpeType};
 
-pub use clip_box::ClipBox;
 pub use gstgtk4::GstGtk4Widget;
 #[cfg(feature = "mpv")]
 pub use mpv::MpvWidget;

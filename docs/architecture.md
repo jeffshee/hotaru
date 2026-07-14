@@ -58,7 +58,8 @@ src/
 ├── state.rs            RendererState: active wallpaper, rebuild path/triggers
 ├── dbus.rs             D-Bus service + command channel
 ├── settings_watcher.rs GSettings access + runtime change propagation
-├── monitor_tracker.rs  GObject emitting "monitor-changed" on hotplug
+├── monitor_watcher.rs  GObject emitting "monitor-changed" on hotplug
+├── clip_box.rs         ClipBox viewport-clipping container
 ├── cli.rs              clap definitions (binary only)
 ├── config.rs           build-time config (version/pkgdatadir, meson-injected)
 ├── constants.rs        application IDs, Wallpaper Engine app id
@@ -69,14 +70,13 @@ src/
 │   ├── video_renderer.rs     VideoRenderer enum (mpv | gst-gtk4)
 │   ├── launch_mode.rs        LaunchMode enum (glib::Boxed)
 │   ├── monitor.rs            MonitorInfo/MonitorMap helpers
-│   └── hanabi_window_params.rs  window-title protocol for Hanabi
+│   └── hanabi_params.rs      window-title protocol for Hanabi
 └── renderer/
     ├── mpv.rs          MpvWidget (libmpv render API into GLArea)
     ├── gstgtk4.rs      GstGtk4Widget (gst-play + gtk4paintablesink)
     ├── web.rs          WebWidget (WebKitGTK)
     ├── scene.rs        SceneWidget (linux-wallpaperengine embed API)
-    ├── gl_loader.rs    process-wide GL symbol resolver (mpv + scene)
-    └── clip_box.rs     ClipBox viewport-clipping container
+    └── gl_loader.rs    process-wide GL symbol resolver (mpv + scene)
 ```
 
 The crate builds as a library (`hotaru::*`) plus a thin binary (`main.rs`,
@@ -133,7 +133,7 @@ monitor shows only its region of one large wallpaper.
 |---|---|
 | `x11-desktop` (default) | Sets `_NET_WM_WINDOW_TYPE_DESKTOP` (EWMH) via x11rb, positions the window with `ConfigureWindow`, and clears `_GTK_FRAME_EXTENTS` so Mutter draws no shadow. If the session is Wayland, the process **re-execs itself with `GDK_BACKEND=x11`** to run on XWayland (`fallback_to_xwayland`). |
 | `wayland-layer-shell` | gtk4-layer-shell: `Layer::Background`, anchored to all four edges, exclusive zone −1, keyboard mode `None`, pinned to the target monitor by connector name. |
-| `gnome-ext-hanabi` | Encodes `HanabiWindowParams` (position, keep-at-bottom/minimized/position flags) as JSON into the **window title** (`@io.github.jeffshee.HanabiRenderer!{...}`). The Hanabi shell extension reads the title and manages the window on the GNOME Shell side. |
+| `gnome-ext-hanabi` | Encodes `HanabiParams` (position, keep-at-bottom/minimized/position flags) as JSON into the **window title** (`@io.github.jeffshee.Hotaru!{...}`). The Hanabi shell extension reads the title and manages the window on the GNOME Shell side. |
 | `windowed` | Plain decorated window. Development/testing. |
 
 Every window installs a frame-clock tick callback that logs frames-per-second
@@ -159,7 +159,7 @@ the single path that materializes a wallpaper, used by both modes:
 The wallpaper is torn down (all windows closed) and rebuilt through the same
 path when:
 
-- **Monitors change** — `MonitorTracker` emits `monitor-changed` on hotplug
+- **Monitors change** — `MonitorWatcher` emits `monitor-changed` on hotplug
   (connected to `GdkMonitors` `items-changed`).
 - **The `video-renderer` setting changes** — switching renderer takes effect
   immediately, no restart required.

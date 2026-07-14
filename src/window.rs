@@ -29,7 +29,7 @@ use x11rb::{
 use crate::{
     application::HotaruApplication,
     constants::WINDOW_TITLE,
-    model::{HanabiWindowParams, LaunchMode, MonitorListModelExt as _},
+    model::{HanabiParams, LaunchMode, MonitorListModelExt as _},
 };
 
 glib::wrapper! {
@@ -116,13 +116,13 @@ impl HotaruApplicationWindow {
 
     fn set_hanabi_window_title(&self) {
         let position = self.position();
-        let params = HanabiWindowParams {
+        let params = HanabiParams {
             position: [position.x, position.y],
             keep_at_bottom: true,
             keep_minimized: true,
             keep_position: true,
         };
-        self.set_title(Some(&params.hanabi_window_title()));
+        self.set_title(Some(&params.window_title()));
     }
 }
 
