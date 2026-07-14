@@ -188,6 +188,9 @@ mod imp {
             // WPE web wallpapers are commonly WebGL (Spine, canvas); force
             // hardware-accelerated compositing for correct/smooth rendering.
             settings.set_hardware_acceleration_policy(webkit::HardwareAccelerationPolicy::Always);
+            // Media (incl. each new <audio> a playlist creates) may play
+            // without a user gesture — a desktop wallpaper never gets one.
+            settings.set_media_playback_requires_user_gesture(false);
             webview.set_settings(&settings);
 
             // Once the page has loaded, hand the wallpaper its properties the
