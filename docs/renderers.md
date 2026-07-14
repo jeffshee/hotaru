@@ -213,7 +213,10 @@ frame per call. The widget therefore mirrors `MpvWidget`'s structure:
 - **Runtime loading** — the engine library
   (`liblinux-wallpaperengine-lib.so`) is dlopen'd on first use, so hotaru
   builds and runs without it; loading a scene then logs an error instead of
-  failing at startup. `HOTARU_WPE_LIBRARY` overrides the library name/path.
+  failing at startup. Search order: `HOTARU_WPE_LIBRARY` if set, then
+  `<prefix>/lib{,64}/hotaru/` next to the running binary (where
+  `make install` puts it — covers ~/.local, /usr, and Flatpak's /app), then
+  the bare soname via the system linker path.
 - **Assets** — the Wallpaper Engine `assets` directory is auto-detected from
   a Steam installation by the engine; `HOTARU_WPE_ASSETS` overrides it.
 - **Desktop GL requirement** — the engine needs OpenGL 3.3 core, not GLES,

@@ -149,17 +149,38 @@ mod imp {
 
     static WPE_LIB: OnceLock<Option<WpeLib>> = OnceLock::new();
 
+    /// The library to dlopen: `$HOTARU_WPE_LIBRARY` if set, else the first
+    /// existing `<prefix>/lib{,64}/hotaru/liblinux-wallpaperengine-lib.so`
+    /// next to the running binary (where `make install` puts it — works for
+    /// ~/.local, /usr, and Flatpak's /app alike), else the bare soname for
+    /// the system linker path.
+    fn library_name() -> String {
+        if let Ok(name) = std::env::var(LIBRARY_ENV) {
+            return name;
+        }
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(prefix) = exe.parent().and_then(|bin| bin.parent()) {
+                for libdir in ["lib", "lib64"] {
+                    let candidate = prefix.join(libdir).join("hotaru").join(DEFAULT_LIBRARY);
+                    if candidate.is_file() {
+                        return candidate.to_string_lossy().into_owned();
+                    }
+                }
+            }
+        }
+        DEFAULT_LIBRARY.to_string()
+    }
+
     fn wpe_lib() -> Option<&'static WpeLib> {
         WPE_LIB
             .get_or_init(|| {
-                let lib_name =
-                    std::env::var(LIBRARY_ENV).unwrap_or_else(|_| DEFAULT_LIBRARY.to_string());
+                let lib_name = library_name();
                 let lib = match unsafe { libloading::Library::new(&lib_name) } {
                     Ok(lib) => lib,
                     Err(e) => {
                         error!(
                             "Failed to load wallpaper engine library {} ({}); \
-                             set {} to its full path",
+                             run 'make wpe-lib install', or set {} to its full path",
                             lib_name, e, LIBRARY_ENV
                         );
                         return None;

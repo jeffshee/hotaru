@@ -75,9 +75,12 @@ It additionally needs CMake, Ninja, and the following dev headers (Fedora
 package names): `glm-devel glfw-devel glew-devel mesa-libGLU-devel
 sdl2-compat-devel lz4-devel freetype-devel` plus the X11/Wayland/DBus dev
 packages.
-Point hotaru at the result with `HOTARU_WPE_LIBRARY` (see the SceneWidget
-section of [renderers.md](renderers.md)). The Flatpak bundles this backend, so
-no manual step is needed there.
+`make install` installs the built library to `PREFIX/lib/hotaru/`, where the
+installed hotaru finds it automatically (it looks in `<prefix>/lib{,64}/hotaru`
+next to its own binary). For uninstalled/dev runs, point hotaru at the build
+output with `HOTARU_WPE_LIBRARY` (see the SceneWidget section of
+[renderers.md](renderers.md)). The Flatpak bundles this backend, so no manual
+step is needed there.
 
 #### Runtime dependencies
 
