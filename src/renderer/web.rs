@@ -107,7 +107,7 @@ mod imp {
         /// wallpaper's bundled media fails with SRC_NOT_SUPPORTED. Must be
         /// set at construction: sandbox grants are immutable once the web
         /// process has spawned. Empty for remote (non-file) wallpapers.
-        #[property(get, set, construct, name = "sandbox-path")]
+        #[property(get, set, construct, name = "sandbox-path", default = "")]
         sandbox_path: RefCell<String>,
         #[property(get)]
         webview: RefCell<WebView>,
