@@ -26,10 +26,10 @@ use crate::constant::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString, Display)]
 #[strum(serialize_all = "kebab_case")]
 pub enum LaunchMode {
+    #[default]
     X11Desktop,
     WaylandLayerShell,
     GnomeExtHanabi,
-    #[default]
     Windowed,
 }
 
@@ -53,7 +53,7 @@ mod tests {
     #[test]
     fn test_launch_mode_default() {
         let default_mode = LaunchMode::default();
-        assert_eq!(default_mode, LaunchMode::Windowed);
+        assert_eq!(default_mode, LaunchMode::X11Desktop);
     }
 
     #[test]

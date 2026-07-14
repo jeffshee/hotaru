@@ -23,10 +23,10 @@ hotaru --daemon                                      # D-Bus daemon
 
 | Mode | Purpose |
 |---|---|
-| `windowed` | Regular window, for development/testing (default) |
-| `x11-desktop` | X11/XWayland EWMH desktop window |
+| `x11-desktop` | X11/XWayland EWMH desktop window (default) |
 | `wayland-layer-shell` | Wayland background layer (wlr-layer-shell) |
 | `gnome-ext-hanabi` | Window managed by the GNOME Hanabi extension |
+| `windowed` | Regular window, for development/testing |
 
 **Standalone mode** reads a wallpaper config JSON from disk, builds the
 wallpaper windows immediately, and runs until killed. It is the direct way to
@@ -123,10 +123,10 @@ monitor shows only its region of one large wallpaper.
 
 | Mode | Mechanism |
 |---|---|
-| `windowed` (default) | Plain decorated window. Development/testing. |
-| `x11-desktop` | Sets `_NET_WM_WINDOW_TYPE_DESKTOP` (EWMH) via x11rb, positions the window with `ConfigureWindow`, and clears `_GTK_FRAME_EXTENTS` so Mutter draws no shadow. If the session is Wayland, the process **re-execs itself with `GDK_BACKEND=x11`** to run on XWayland (`fallback_to_xwayland`). |
+| `x11-desktop` (default) | Sets `_NET_WM_WINDOW_TYPE_DESKTOP` (EWMH) via x11rb, positions the window with `ConfigureWindow`, and clears `_GTK_FRAME_EXTENTS` so Mutter draws no shadow. If the session is Wayland, the process **re-execs itself with `GDK_BACKEND=x11`** to run on XWayland (`fallback_to_xwayland`). |
 | `wayland-layer-shell` | gtk4-layer-shell: `Layer::Background`, anchored to all four edges, exclusive zone −1, keyboard mode `None`, pinned to the target monitor by connector name. |
 | `gnome-ext-hanabi` | Encodes `HanabiWindowParams` (position, keep-at-bottom/minimized/position flags) as JSON into the **window title** (`@io.github.jeffshee.HanabiRenderer!{...}`). The Hanabi shell extension reads the title and manages the window on the GNOME Shell side. |
+| `windowed` | Plain decorated window. Development/testing. |
 
 Every window installs a frame-clock tick callback that logs frames-per-second
 per monitor at `debug` level — useful for measuring delivered frame rate.
