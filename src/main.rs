@@ -119,12 +119,18 @@ fn main() -> anyhow::Result<()> {
         app.register(gio::Cancellable::NONE)?;
         let _hold_guard = app.hold();
 
-        // Auto-restore last wallpaper if available
+        // Auto-restore last wallpaper if available. An explicit
+        // --launch-mode overrides the persisted mode — it decided the
+        // backend above, so restoring with the persisted mode instead
+        // could contradict it (and the wallpaper source is mode-agnostic).
         let last_config = state.settings_watcher.last_wallpaper_config();
-        let last_launch_mode = state.settings_watcher.last_launch_mode();
-        if !last_config.is_empty() && !last_launch_mode.is_empty() {
+        let restore_mode = cli
+            .launch_mode
+            .map(|mode| mode.to_string())
+            .unwrap_or_else(|| state.settings_watcher.last_launch_mode());
+        if !last_config.is_empty() && !restore_mode.is_empty() {
             info!("Restoring last wallpaper on daemon startup");
-            if let Err(e) = state.apply_wallpaper(&last_config, &last_launch_mode) {
+            if let Err(e) = state.apply_wallpaper(&last_config, &restore_mode) {
                 tracing::error!("Failed to restore last wallpaper: {}", e);
             }
         }
