@@ -121,20 +121,22 @@ fn main() -> anyhow::Result<()> {
         state.main_loop.replace(Some(main_loop.clone()));
         main_loop.run();
     } else {
-        // Standalone mode: read config file and run immediately
-        let launch_mode = cli.launch_mode;
-
-        // Handle XWayland fallback for X11Desktop mode
-        if launch_mode == LaunchMode::X11Desktop {
-            hotaru::application::fallback_to_xwayland();
-        }
-
+        // Standalone mode: read config file and run immediately. Load and
+        // validate the config before the XWayland fallback, so a missing or
+        // invalid --config fails fast instead of after the re-exec.
         let config_file = cli
             .config_file
             .ok_or_else(|| anyhow::anyhow!("--config is required when not in daemon mode"))?;
         let json = std::fs::read_to_string(&config_file)?;
         let config: WallpaperConfig = serde_json::from_str(&json)?;
         info!("Wallpaper config loaded: {:#?}", config);
+
+        let launch_mode = cli.launch_mode;
+
+        // Handle XWayland fallback for X11Desktop mode
+        if launch_mode == LaunchMode::X11Desktop {
+            hotaru::application::fallback_to_xwayland();
+        }
 
         let state_for_activate = state.clone();
         app.connect_activate(move |_app| {
