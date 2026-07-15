@@ -36,11 +36,12 @@ pub struct Cli {
         short = 'c',
         long = "config",
         value_name = "FILE",
-        help = "Path to the wallpaper config JSON file (not required in daemon mode)"
+        help = "Path to the wallpaper config JSON file (required unless --daemon)"
     )]
     pub config_file: Option<PathBuf>,
 
     #[arg(
+        short = 'd',
         long,
         default_value_t = false,
         help = "Run as a D-Bus daemon, waiting for commands from the frontend"

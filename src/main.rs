@@ -126,7 +126,7 @@ fn main() -> anyhow::Result<()> {
         // invalid --config fails fast instead of after the re-exec.
         let config_file = cli
             .config_file
-            .ok_or_else(|| anyhow::anyhow!("--config is required when not in daemon mode"))?;
+            .ok_or_else(|| anyhow::anyhow!("--config is required unless --daemon"))?;
         let json = std::fs::read_to_string(&config_file)?;
         let config: WallpaperConfig = serde_json::from_str(&json)?;
         info!("Wallpaper config loaded: {:#?}", config);
