@@ -205,18 +205,39 @@ fn wrap_with_viewport(
     .upcast()
 }
 
+fn display_backend_is(type_name: &str) -> bool {
+    Display::default()
+        .zip(Type::from_name(type_name))
+        .is_some_and(|(display, gdk_type)| display.type_().is_a(gdk_type))
+}
+
+/// Whether the current GDK display can host windows of this launch mode:
+/// X11 desktop windows need the X11 backend, layer-shell needs Wayland.
+/// The backend is fixed once the display opens (chosen at startup, see
+/// `fallback_to_xwayland`), so a mismatch requires a process restart.
+pub fn check_launch_mode_backend(launch_mode: LaunchMode) -> Result<(), String> {
+    match launch_mode {
+        LaunchMode::X11Desktop if !display_backend_is("GdkX11Display") => Err(format!(
+            "launch mode {launch_mode} requires the X11 backend, but this process is \
+             running on Wayland; restart the daemon to switch (the config was saved \
+             and will be restored)"
+        )),
+        LaunchMode::WaylandLayerShell if !display_backend_is("GdkWaylandDisplay") => Err(format!(
+            "launch mode {launch_mode} requires the Wayland backend, but this process \
+             is running on X11; restart the daemon to switch (the config was saved \
+             and will be restored)"
+        )),
+        _ => Ok(()),
+    }
+}
+
 /// If the current display is not X11, set `GDK_BACKEND=x11` and re-exec
 /// the process so that GTK uses XWayland. This is required for X11Desktop
 /// launch mode where we need X11 window type hints.
 ///
 /// If already on X11, this is a no-op.
 pub fn fallback_to_xwayland() {
-    let display = Display::default().expect("Failed to get default display");
-    let is_x11 = Type::from_name("GdkX11Display")
-        .map(|x11_type| display.type_().is_a(x11_type))
-        .unwrap_or(false);
-
-    if !is_x11 {
+    if !display_backend_is("GdkX11Display") {
         warn!("Display is not X11, re-executing with GDK_BACKEND=x11 for XWayland fallback");
         env::set_var("GDK_BACKEND", "x11");
         let args: Vec<String> = env::args().collect();

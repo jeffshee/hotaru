@@ -97,19 +97,26 @@ impl RendererState {
         );
     }
 
-    /// Apply a wallpaper config: store it and (re)build the UI.
-    pub fn apply(&self, config: &WallpaperConfig, launch_mode: LaunchMode) {
+    /// Apply a wallpaper config: store it and (re)build the UI. Fails when
+    /// the launch mode needs a different GDK backend than this process runs
+    /// on (the backend is fixed at startup).
+    pub fn apply(&self, config: &WallpaperConfig, launch_mode: LaunchMode) -> Result<(), String> {
+        crate::application::check_launch_mode_backend(launch_mode)?;
+
         // Update state before build_ui so the monitor-changed handler sees
         // the correct values.
         *self.launch_mode.borrow_mut() = launch_mode;
         *self.config.borrow_mut() = Some(config.clone());
         self.rebuild(config, launch_mode);
         *self.playback_state.borrow_mut() = PlaybackState::Playing;
+        Ok(())
     }
 
     /// D-Bus flavor of [`apply`](Self::apply): parse the JSON config and
-    /// launch-mode strings, then persist them for auto-restore on the next
-    /// daemon startup.
+    /// launch-mode strings, and persist them for auto-restore on the next
+    /// daemon startup. Persisted even when apply fails on a backend
+    /// mismatch, so restarting the daemon (which picks its backend from the
+    /// persisted mode) restores this config on the right backend.
     pub fn apply_wallpaper(
         &self,
         config_json: &str,
@@ -125,10 +132,10 @@ impl RendererState {
             config.mode, launch_mode
         );
 
-        self.apply(&config, launch_mode);
-
         self.settings_watcher.set_last_wallpaper_config(config_json);
         self.settings_watcher.set_last_launch_mode(launch_mode_str);
+
+        self.apply(&config, launch_mode)?;
 
         Ok(true)
     }

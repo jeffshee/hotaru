@@ -27,10 +27,9 @@ pub struct Cli {
     #[arg(
         short = 'l',
         long = "launch-mode",
-        default_value_t,
-        help = "Launch mode"
+        help = "Launch mode [default: x11-desktop; in daemon mode: the last-used mode]"
     )]
-    pub launch_mode: LaunchMode,
+    pub launch_mode: Option<LaunchMode>,
 
     #[arg(
         short = 'c',

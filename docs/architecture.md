@@ -38,6 +38,14 @@ before `GApplication` registration so D-Bus activation callers find the
 interface as soon as the process starts, holds the application alive with no
 windows open, and auto-restores the last applied wallpaper on startup.
 
+The GDK backend is fixed once the display opens, so the daemon picks it at
+startup from the expected launch mode — an explicit `--launch-mode`, else the
+persisted last-used mode (the one auto-restore will apply), else the default —
+and runs the XWayland fallback when that is `x11-desktop`. An
+`ApplyWallpaper` whose mode needs the other backend is rejected with a
+descriptive error, but its config/mode are persisted first: the frontend just
+restarts the daemon, which then boots on the right backend and restores it.
+
 ```mermaid
 flowchart LR
     CFG["config JSON<br/>(--config)"] -->|standalone| BU
@@ -196,7 +204,7 @@ interface `io.github.jeffshee.Hotaru.Renderer`:
 
 | Member | Signature | Behavior |
 |---|---|---|
-| `ApplyWallpaper(config_json s, launch_mode s) → b` | method | Parse + build; persists for auto-restore. |
+| `ApplyWallpaper(config_json s, launch_mode s) → b` | method | Parse + build; persists for auto-restore (also on backend-mismatch rejection, so a daemon restart applies it). |
 | `DisableWallpaper() → b` | method | Stop renderers, close windows, clear persisted config. |
 | `Pause() / Resume() → b` | method | Pause/resume playback (`false` if not in the right state). |
 | `Quit()` | method | Quit the application. |
