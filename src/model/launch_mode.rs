@@ -40,10 +40,8 @@ impl LaunchMode {
     /// windows (GNOME — no layer-shell — and X11 sessions, via the XWayland
     /// fallback). The other modes are only ever chosen explicitly:
     /// `gnome-ext-hanabi` by the extension, `windowed` for development.
-    ///
-    /// Requires GTK to be initialized (probes the default display).
     pub fn detect() -> Self {
-        let detected = if gtk4_layer_shell::is_supported() {
+        let detected = if compositor_supports_layer_shell() {
             Self::WaylandLayerShell
         } else {
             Self::X11Desktop
@@ -51,6 +49,49 @@ impl LaunchMode {
         tracing::info!("Auto-detected launch mode: {}", detected);
         detected
     }
+}
+
+/// Whether the Wayland compositor advertises `zwlr_layer_shell_v1`, probed
+/// with a bare registry roundtrip. Deliberately not
+/// `gtk4_layer_shell::is_supported()`: that initializes the whole library,
+/// which prints protocol warnings, and asserts (GLib CRITICAL) when the GDK
+/// display is not Wayland — e.g. on the second detection pass after the
+/// XWayland re-exec. False on non-Wayland sessions.
+fn compositor_supports_layer_shell() -> bool {
+    use wayland_client::{protocol::wl_registry, Connection, Dispatch, QueueHandle};
+
+    struct Probe {
+        layer_shell: bool,
+    }
+
+    impl Dispatch<wl_registry::WlRegistry, ()> for Probe {
+        fn event(
+            probe: &mut Self,
+            _registry: &wl_registry::WlRegistry,
+            event: wl_registry::Event,
+            _data: &(),
+            _conn: &Connection,
+            _qh: &QueueHandle<Self>,
+        ) {
+            if let wl_registry::Event::Global { interface, .. } = event {
+                if interface == "zwlr_layer_shell_v1" {
+                    probe.layer_shell = true;
+                }
+            }
+        }
+    }
+
+    let Ok(conn) = Connection::connect_to_env() else {
+        return false; // not a Wayland session
+    };
+    let mut queue = conn.new_event_queue();
+    let _registry = conn.display().get_registry(&queue.handle(), ());
+    let mut probe = Probe { layer_shell: false };
+    // One roundtrip delivers the initial list of globals.
+    if queue.roundtrip(&mut probe).is_err() {
+        return false;
+    }
+    probe.layer_shell
 }
 
 #[cfg(test)]
