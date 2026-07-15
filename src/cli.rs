@@ -27,7 +27,9 @@ pub struct Cli {
     #[arg(
         short = 'l',
         long = "launch-mode",
-        help = "Launch mode [default: x11-desktop; in daemon mode: the last-used mode]"
+        help = "Launch mode [default: auto-detected (wayland-layer-shell where the \
+                compositor supports it, else x11-desktop); in daemon mode the \
+                last-used mode takes precedence over detection]"
     )]
     pub launch_mode: Option<LaunchMode>,
 

@@ -95,15 +95,15 @@ fn main() -> anyhow::Result<()> {
         // The GDK backend is fixed once the display opens, so decide now
         // whether this daemon will serve X11 wallpapers: an explicit
         // --launch-mode wins, else the persisted last-used mode (which
-        // auto-restore will apply below), else the default. A later
-        // ApplyWallpaper with a mismatched mode is rejected with a hint
-        // to restart (see RendererState::apply_wallpaper).
+        // auto-restore will apply below), else environment detection. A
+        // later ApplyWallpaper with a mismatched mode is rejected with a
+        // hint to restart (see RendererState::apply_wallpaper).
         let expected_mode = cli
             .launch_mode
             .or_else(|| {
                 std::str::FromStr::from_str(&state.settings_watcher.last_launch_mode()).ok()
             })
-            .unwrap_or_default();
+            .unwrap_or_else(LaunchMode::detect);
         if expected_mode == LaunchMode::X11Desktop {
             hotaru::application::fallback_to_xwayland();
         }
@@ -153,7 +153,7 @@ fn main() -> anyhow::Result<()> {
         let config: WallpaperConfig = serde_json::from_str(&json)?;
         info!("Wallpaper config loaded: {:#?}", config);
 
-        let launch_mode = cli.launch_mode.unwrap_or_default();
+        let launch_mode = cli.launch_mode.unwrap_or_else(LaunchMode::detect);
 
         // Handle XWayland fallback for X11Desktop mode
         if launch_mode == LaunchMode::X11Desktop {

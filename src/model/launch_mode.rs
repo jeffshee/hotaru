@@ -34,6 +34,25 @@ pub enum LaunchMode {
     Windowed,
 }
 
+impl LaunchMode {
+    /// Detect the launch mode for this environment: layer-shell where the
+    /// compositor supports it (KDE, wlroots, …), otherwise X11 desktop
+    /// windows (GNOME — no layer-shell — and X11 sessions, via the XWayland
+    /// fallback). The other modes are only ever chosen explicitly:
+    /// `gnome-ext-hanabi` by the extension, `windowed` for development.
+    ///
+    /// Requires GTK to be initialized (probes the default display).
+    pub fn detect() -> Self {
+        let detected = if gtk4_layer_shell::is_supported() {
+            Self::WaylandLayerShell
+        } else {
+            Self::X11Desktop
+        };
+        tracing::info!("Auto-detected launch mode: {}", detected);
+        detected
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

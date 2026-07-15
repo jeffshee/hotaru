@@ -23,28 +23,39 @@ hotaru --daemon                                      # D-Bus daemon
 
 | Mode | Purpose |
 |---|---|
-| `x11-desktop` | X11/XWayland EWMH desktop window (default) |
+| `x11-desktop` | X11/XWayland EWMH desktop window |
 | `wayland-layer-shell` | Wayland background layer (wlr-layer-shell) |
 | `gnome-ext-hanabi` | Window managed by the GNOME Hanabi extension |
 | `windowed` | Regular window, for development/testing |
 
+**Launch-mode resolution** — the effective mode is, in order:
+
+1. an explicit `--launch-mode` (or, in the daemon, the mode a D-Bus
+   `ApplyWallpaper` carries);
+2. in the daemon, the persisted last-used mode, so auto-restore resumes
+   exactly what was showing;
+3. otherwise **auto-detection**: `wayland-layer-shell` where the compositor
+   supports layer-shell (KDE, wlroots, …), else `x11-desktop` (GNOME and X11
+   sessions). `gnome-ext-hanabi` and `windowed` are only ever explicit.
+
+`x11-desktop` on a Wayland session re-execs the process with
+`GDK_BACKEND=x11` to run on XWayland. The GDK backend is fixed once per
+process; a daemon `ApplyWallpaper` whose mode needs the other backend is
+rejected with a descriptive error but persisted first — restarting the
+daemon then boots on the right backend and restores it.
+
 **Standalone mode** reads a wallpaper config JSON from disk, builds the
 wallpaper windows immediately, and runs until killed. It is the direct way to
-use Hotaru and the mode used for development and testing.
+use Hotaru and the mode used for development and testing. It never reads or
+writes the persisted `last-*` state.
 
 **Daemon mode** owns the session bus name `io.github.jeffshee.Hotaru` and
 waits for commands from a frontend. It registers the D-Bus service
 before `GApplication` registration so D-Bus activation callers find the
 interface as soon as the process starts, holds the application alive with no
-windows open, and auto-restores the last applied wallpaper on startup.
-
-The GDK backend is fixed once the display opens, so the daemon picks it at
-startup from the expected launch mode — an explicit `--launch-mode`, else the
-persisted last-used mode (the one auto-restore will apply), else the default —
-and runs the XWayland fallback when that is `x11-desktop`. An
-`ApplyWallpaper` whose mode needs the other backend is rejected with a
-descriptive error, but its config/mode are persisted first: the frontend just
-restarts the daemon, which then boots on the right backend and restores it.
+windows open, and auto-restores the last applied wallpaper on startup. Every
+apply — accepted or backend-rejected — persists `last-wallpaper-config` /
+`last-launch-mode`, so a daemon restart always converges on the last request.
 
 ```mermaid
 flowchart LR
@@ -139,7 +150,7 @@ monitor shows only its region of one large wallpaper.
 
 | Mode | Mechanism |
 |---|---|
-| `x11-desktop` (default) | Sets `_NET_WM_WINDOW_TYPE_DESKTOP` (EWMH) via x11rb, positions the window with `ConfigureWindow`, and clears `_GTK_FRAME_EXTENTS` so Mutter draws no shadow. If the session is Wayland, the process **re-execs itself with `GDK_BACKEND=x11`** to run on XWayland (`fallback_to_xwayland`). |
+| `x11-desktop` | Sets `_NET_WM_WINDOW_TYPE_DESKTOP` (EWMH) via x11rb, positions the window with `ConfigureWindow`, and clears `_GTK_FRAME_EXTENTS` so Mutter draws no shadow. If the session is Wayland, the process **re-execs itself with `GDK_BACKEND=x11`** to run on XWayland (`fallback_to_xwayland`). |
 | `wayland-layer-shell` | gtk4-layer-shell: `Layer::Background`, anchored to all four edges, exclusive zone −1, keyboard mode `None`, pinned to the target monitor by connector name. |
 | `gnome-ext-hanabi` | Encodes `HanabiParams` as compact JSON into the **window title**: `@io.github.jeffshee.Hotaru!{"p":[x,y],"b":true,"m":true,"k":true}` (`p` position, `b` keep-at-bottom, `m` keep-minimized, `k` keep-position). The Hanabi shell extension reads the title and manages the window on the GNOME Shell side. |
 | `windowed` | Plain decorated window. Development/testing. |
